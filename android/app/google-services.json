@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "709873834885",
+    "project_id": "jupiter-da0d7",
+    "storage_bucket": "jupiter-da0d7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:709873834885:android:99ef984062232ac7e302ec",
+        "android_client_info": {
+          "package_name": "com.sicol.sicol_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCthiFAlReyhh3-S9Vt6KmRv2b0s8O8jxI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
