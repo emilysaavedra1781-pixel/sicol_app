@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_app_check/firebase_app_check.dart'; // ← agrega esto
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'core/theme/app_colors.dart';
 import 'services/auth_service.dart';
 import 'features/auth/login/login_view.dart';
@@ -49,24 +50,43 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder(
       stream: authService.authStateChanges,
       builder: (context, snapshot) {
-        // Cargando estado inicial
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             backgroundColor: Color(0xFF0A0E1A),
             body: Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFF1E6BFF),
-              ),
+              child: CircularProgressIndicator(color: Color(0xFF1E6BFF)),
             ),
           );
         }
 
-        // Usuario autenticado
         if (snapshot.hasData && snapshot.data != null) {
-          return const PassengerHomeView();
+          // Verificar si el usuario existe en Firestore
+          return FutureBuilder(
+            future: FirebaseFirestore.instance
+                .collection('usuarios')
+                .doc(snapshot.data!.uid)
+                .get(),
+            builder: (context, firestoreSnapshot) {
+              if (firestoreSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  backgroundColor: Color(0xFF0A0E1A),
+                  body: Center(
+                    child: CircularProgressIndicator(color: Color(0xFF1E6BFF)),
+                  ),
+                );
+              }
+
+              // Si no existe en Firestore, cerrar sesión
+              if (!firestoreSnapshot.hasData || !firestoreSnapshot.data!.exists) {
+                FirebaseAuth.instance.signOut();
+                return const LoginView();
+              }
+
+              return const PassengerHomeView();
+            },
+          );
         }
 
-        // No autenticado → Login
         return const LoginView();
       },
     );

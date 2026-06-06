@@ -68,6 +68,9 @@ class _RegisterViewState extends State<RegisterView> {
       _errorMessage = null;
     });
 
+    // Limpiar sesión huérfana primero
+    await _authService.limpiarSesionHuerfana();
+
     // EA02: Verificar si el celular ya está registrado
     final celular = _celularCtrl.text.trim();
     final yaRegistrado = await _authService.isCelularRegistered(celular);

@@ -171,6 +171,18 @@ class AuthService {
     }
   }
 
+
+  // ── Limpiar sesión huérfana ─────────────────────────────────────────────
+  Future<void> limpiarSesionHuerfana() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      final doc = await _db.collection('usuarios').doc(user.uid).get();
+      if (!doc.exists) {
+        await _auth.signOut();
+      }
+    }
+  }
+
   // ── Cerrar sesión ───────────────────────────────────────────────────────
   Future<void> signOut() async {
     await _auth.signOut();
