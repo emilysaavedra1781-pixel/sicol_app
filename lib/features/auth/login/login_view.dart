@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../services/auth_service.dart';
 import '../register/register_view.dart';
 import '../forgot_password/forgot_password_view.dart';
@@ -13,7 +14,7 @@ class LoginView extends StatefulWidget {
 
 class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
-  final _emailCtrl = TextEditingController();
+  final _celularCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _authService = AuthService();
 
@@ -23,7 +24,7 @@ class _LoginViewState extends State<LoginView> {
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
+    _celularCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
@@ -36,8 +37,8 @@ class _LoginViewState extends State<LoginView> {
       _errorMessage = null;
     });
 
-    final result = await _authService.loginWithEmailPassword(
-      email: _emailCtrl.text.trim(),
+    final result = await _authService.loginWithCelular(
+      celular: _celularCtrl.text.trim(),
       password: _passCtrl.text,
     );
 
@@ -54,17 +55,17 @@ class _LoginViewState extends State<LoginView> {
         switch (result['error']) {
           case 'cuenta_bloqueada':
             _errorMessage =
-            'Tu cuenta ha sido bloqueada. Usa la opción de recuperación de contraseña para desbloquearla.';
+            'Tu cuenta está bloqueada. Usa "¿Olvidaste tu contraseña?" para desbloquearla.';
             break;
           case 'usuario_no_encontrado':
             _errorMessage =
-            'No existe una cuenta con ese correo. Por favor regístrate.';
+            'No existe una cuenta con ese número de celular.';
             break;
           default:
             final intentos = result['intentosRestantes'];
             _errorMessage = intentos != null
                 ? 'Credenciales incorrectas. Te quedan $intentos intento(s).'
-                : 'Credenciales incorrectas. Verifica tu correo y contraseña.';
+                : 'Credenciales incorrectas.';
         }
       });
     }
@@ -83,7 +84,8 @@ class _LoginViewState extends State<LoginView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 24),
-                // Logo / Branding
+
+                // Branding
                 Center(
                   child: Column(
                     children: [
@@ -94,48 +96,36 @@ class _LoginViewState extends State<LoginView> {
                           color: const Color(0xFF1E6BFF),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Icon(
-                          Icons.directions_bus_rounded,
-                          color: Colors.white,
-                          size: 40,
-                        ),
+                        child: const Icon(Icons.directions_bus_rounded,
+                            color: Colors.white, size: 40),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
-                        'SICOL',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 4,
-                        ),
-                      ),
+                      const Text('SICOL',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 4)),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Sistema de Colectivos',
-                        style: TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontSize: 13,
-                          letterSpacing: 1,
-                        ),
-                      ),
+                      const Text('Sistema de Colectivos',
+                          style: TextStyle(
+                              color: Color(0xFF6B7280),
+                              fontSize: 13,
+                              letterSpacing: 1)),
                     ],
                   ),
                 ),
                 const SizedBox(height: 48),
-                const Text(
-                  'Iniciar sesión',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+
+                const Text('Iniciar sesión',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
-                const Text(
-                  'Ingresa como pasajero para continuar',
-                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
-                ),
+                const Text('Ingresa tu celular y contraseña',
+                    style:
+                    TextStyle(color: Color(0xFF6B7280), fontSize: 14)),
                 const SizedBox(height: 32),
 
                 // Error banner
@@ -144,11 +134,11 @@ class _LoginViewState extends State<LoginView> {
                     margin: const EdgeInsets.only(bottom: 20),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF3B30).withOpacity(0.12),
+                      color: const Color(0xFFFF3B30).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: const Color(0xFFFF3B30).withOpacity(0.3),
-                      ),
+                          color:
+                          const Color(0xFFFF3B30).withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
@@ -156,61 +146,73 @@ class _LoginViewState extends State<LoginView> {
                             color: Color(0xFFFF3B30), size: 18),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: Color(0xFFFF3B30),
-                              fontSize: 13,
-                            ),
-                          ),
+                          child: Text(_errorMessage!,
+                              style: const TextStyle(
+                                  color: Color(0xFFFF3B30), fontSize: 13)),
                         ),
                       ],
                     ),
                   ),
 
-                // Email field
-                _buildLabel('Correo electrónico'),
+                // Celular
+                _buildLabel('Número de celular'),
                 const SizedBox(height: 8),
-                _buildTextField(
-                  controller: _emailCtrl,
-                  hint: 'ejemplo@correo.com',
-                  icon: Icons.email_outlined,
-                  keyboardType: TextInputType.emailAddress,
+                TextFormField(
+                  controller: _celularCtrl,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  style:
+                  const TextStyle(color: Colors.white, fontSize: 15),
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Ingresa tu correo';
-                    if (!v.contains('@')) return 'Correo inválido';
+                    if (v == null || v.isEmpty) return 'Ingresa tu celular';
+                    if (v.length != 9) return '9 dígitos requeridos';
                     return null;
                   },
+                  decoration: _inputDecoration(
+                    hint: '9XXXXXXXX',
+                    icon: Icons.phone_outlined,
+                    prefix: const Padding(
+                      padding: EdgeInsets.only(left: 12, right: 4),
+                      child: Text('+51 ',
+                          style: TextStyle(
+                              color: Color(0xFF6B7280), fontSize: 14)),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 20),
 
-                // Password field
+                // Contraseña
                 _buildLabel('Contraseña'),
                 const SizedBox(height: 8),
-                _buildTextField(
+                TextFormField(
                   controller: _passCtrl,
-                  hint: '••••••••',
-                  icon: Icons.lock_outline,
-                  obscure: _obscurePassword,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      color: const Color(0xFF6B7280),
-                      size: 20,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
-                  ),
+                  obscureText: _obscurePassword,
+                  style:
+                  const TextStyle(color: Colors.white, fontSize: 15),
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Ingresa tu contraseña';
+                    if (v == null || v.isEmpty)
+                      return 'Ingresa tu contraseña';
                     return null;
                   },
+                  decoration: _inputDecoration(
+                    hint: '••••••••',
+                    icon: Icons.lock_outline,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        color: const Color(0xFF6B7280),
+                        size: 20,
+                      ),
+                      onPressed: () => setState(
+                              () => _obscurePassword = !_obscurePassword),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
 
-                // Forgot password (RF03)
+                // Olvidé contraseña
                 Align(
                   alignment: Alignment.centerRight,
                   child: GestureDetector(
@@ -219,19 +221,16 @@ class _LoginViewState extends State<LoginView> {
                       MaterialPageRoute(
                           builder: (_) => const ForgotPasswordView()),
                     ),
-                    child: const Text(
-                      '¿Olvidaste tu contraseña?',
-                      style: TextStyle(
-                        color: Color(0xFF1E6BFF),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    child: const Text('¿Olvidaste tu contraseña?',
+                        style: TextStyle(
+                            color: Color(0xFF1E6BFF),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500)),
                   ),
                 ),
                 const SizedBox(height: 32),
 
-                // Login button
+                // Botón login
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -241,53 +240,41 @@ class _LoginViewState extends State<LoginView> {
                       backgroundColor: const Color(0xFF1E6BFF),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                          borderRadius: BorderRadius.circular(14)),
                       elevation: 0,
                     ),
                     child: _loading
                         ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                        : const Text(
-                      'Iniciar sesión',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2.5))
+                        : const Text('Iniciar sesión',
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600)),
                   ),
                 ),
                 const SizedBox(height: 32),
 
-                // Register link (RF01)
+                // Registro
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      '¿No tienes cuenta? ',
-                      style:
-                      TextStyle(color: Color(0xFF6B7280), fontSize: 14),
-                    ),
+                    const Text('¿No tienes cuenta? ',
+                        style: TextStyle(
+                            color: Color(0xFF6B7280), fontSize: 14)),
                     GestureDetector(
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
                             builder: (_) => const RegisterView()),
                       ),
-                      child: const Text(
-                        'Regístrate',
-                        style: TextStyle(
-                          color: Color(0xFF1E6BFF),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      child: const Text('Regístrate',
+                          style: TextStyle(
+                              color: Color(0xFF1E6BFF),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
@@ -299,34 +286,23 @@ class _LoginViewState extends State<LoginView> {
     );
   }
 
-  Widget _buildLabel(String text) => Text(
-    text,
-    style: const TextStyle(
-      color: Color(0xFFD1D5DB),
-      fontSize: 13,
-      fontWeight: FontWeight.w500,
-    ),
-  );
+  Widget _buildLabel(String text) => Text(text,
+      style: const TextStyle(
+          color: Color(0xFFD1D5DB),
+          fontSize: 13,
+          fontWeight: FontWeight.w500));
 
-  Widget _buildTextField({
-    required TextEditingController controller,
+  InputDecoration _inputDecoration({
     required String hint,
     required IconData icon,
-    TextInputType? keyboardType,
-    bool obscure = false,
     Widget? suffixIcon,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      obscureText: obscure,
-      style: const TextStyle(color: Colors.white, fontSize: 15),
-      validator: validator,
-      decoration: InputDecoration(
+    Widget? prefix,
+  }) =>
+      InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Color(0xFF4B5563)),
-        prefixIcon: Icon(icon, color: const Color(0xFF6B7280), size: 20),
+        prefixIcon:
+        prefix ?? Icon(icon, color: const Color(0xFF6B7280), size: 20),
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: const Color(0xFF111827),
@@ -340,7 +316,8 @@ class _LoginViewState extends State<LoginView> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
+          borderSide:
+          const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -351,10 +328,9 @@ class _LoginViewState extends State<LoginView> {
           borderSide:
           const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
         ),
-        errorStyle: const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
+        errorStyle:
+        const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
         contentPadding:
         const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      ),
-    );
-  }
+      );
 }

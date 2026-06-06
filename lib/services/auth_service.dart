@@ -1,35 +1,31 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+// ── Stream estado de autenticación ─────────────────────────────────────
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
+  final _db = FirebaseFirestore.instance;
+  // ── Stream estado de autenticación ─────────────────────────────────────
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  static const int maxFailedAttempts = 3;
 
-  // ─── RF01: Registro de Usuario ───────────────────────────────────────────
-
-  /// Verifica si el celular ya está registrado en Firestore
-  Future<bool> isCelularRegistered(String celular) async {
-    final query = await _db
-        .collection('usuarios')
-        .where('celular', isEqualTo: celular)
-        .limit(1)
-        .get();
-    return query.docs.isNotEmpty;
-  }
-
-  /// Envía OTP al número de celular (Firebase Phone Auth)
+  // ── Verificar OTP ───────────────────────────────────────────────────────
   Future<void> sendOTP({
-    required String phoneNumber, // formato: +51XXXXXXXXX
-    required void Function(PhoneAuthCredential) verificationCompleted,
-    required void Function(FirebaseAuthException) verificationFailed,
-    required void Function(String, int?) codeSent,
-    required void Function(String) codeAutoRetrievalTimeout,
+    required String phoneNumber,
+    required Function(PhoneAuthCredential) verificationCompleted,
+    required Function(FirebaseAuthException) verificationFailed,
+    required Function(String, int?) codeSent,
+    required Function(String) codeAutoRetrievalTimeout,
   }) async {
+
+    // Solo para desarrollo
+    await _auth.setSettings(
+      appVerificationDisabledForTesting: false,
+    );
+
     await _auth.verifyPhoneNumber(
       phoneNumber: phoneNumber,
-      timeout: const Duration(seconds: 60),
       verificationCompleted: verificationCompleted,
       verificationFailed: verificationFailed,
       codeSent: codeSent,
@@ -37,7 +33,7 @@ class AuthService {
     );
   }
 
-  /// Verifica el OTP ingresado por el usuario
+  // ── Verificar OTP ───────────────────────────────────────────────────────
   Future<UserCredential> verifyOTP({
     required String verificationId,
     required String smsCode,
@@ -48,17 +44,25 @@ class AuthService {
     );
     return await _auth.signInWithCredential(credential);
   }
-
-  /// Registra al usuario en Firestore después de verificar OTP (RF01)
+  // ── Registro: vincula email+pass al usuario phone y guarda en Firestore ─
   Future<void> registerUser({
     required String uid,
     required String dni,
     required String nombre,
     required String apellido,
     required String celular,
-    required String fechaNacimiento,
     required String email,
+    required String password,
+    required String fechaNacimiento,
   }) async {
+    // Vincular email+password al usuario de teléfono ya autenticado
+    final emailCredential = EmailAuthProvider.credential(
+      email: email,
+      password: password,
+    );
+    await _auth.currentUser!.linkWithCredential(emailCredential);
+
+    // Guardar perfil en Firestore
     await _db.collection('usuarios').doc(uid).set({
       'uid': uid,
       'dni': dni,
@@ -68,84 +72,97 @@ class AuthService {
       'email': email,
       'fechaNacimiento': fechaNacimiento,
       'rol': 'pasajero',
-      'estado': 'activo',
-      'intentosFallidos': 0,
       'bloqueado': false,
+      'intentosFallidos': 0,
       'creadoEn': FieldValue.serverTimestamp(),
     });
   }
 
-  // ─── RF02: Inicio de Sesión ───────────────────────────────────────────────
-
-  /// Login con email/password. Maneja bloqueo por intentos fallidos (RF40)
-  Future<Map<String, dynamic>> loginWithEmailPassword({
-    required String email,
+  // ── Login con celular + contraseña ──────────────────────────────────────
+  Future<Map<String, dynamic>> loginWithCelular({
+    required String celular,
     required String password,
   }) async {
-    // Buscar usuario por email en Firestore para verificar bloqueo
-    final query = await _db
-        .collection('usuarios')
-        .where('email', isEqualTo: email)
-        .limit(1)
-        .get();
-
-    if (query.docs.isEmpty) {
-      return {'success': false, 'error': 'usuario_no_encontrado'};
-    }
-
-    final userDoc = query.docs.first;
-    final data = userDoc.data();
-
-    // RF40: Verificar si está bloqueado
-    if (data['bloqueado'] == true) {
-      return {'success': false, 'error': 'cuenta_bloqueada'};
-    }
-
     try {
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      // 1. Buscar email asociado al celular en Firestore
+      final query = await _db
+          .collection('usuarios')
+          .where('celular', isEqualTo: celular)
+          .limit(1)
+          .get();
 
-      // Resetear intentos fallidos al login exitoso
-      await userDoc.reference.update({'intentosFallidos': 0});
+      if (query.docs.isEmpty) {
+        return {'success': false, 'error': 'usuario_no_encontrado'};
+      }
 
-      return {'success': true, 'user': credential.user};
-    } on FirebaseAuthException {
-      // Incrementar intentos fallidos
-      final intentos = (data['intentosFallidos'] ?? 0) + 1;
-      final Map<String, dynamic> update = {'intentosFallidos': intentos};
+      final doc = query.docs.first;
+      final data = doc.data();
 
-      // RF40: Bloquear tras 3 intentos
-      if (intentos >= maxFailedAttempts) {
-        update['bloqueado'] = true;
-        await userDoc.reference.update(update);
+      if (data['bloqueado'] == true) {
         return {'success': false, 'error': 'cuenta_bloqueada'};
       }
 
-      await userDoc.reference.update(update);
-      return {
-        'success': false,
-        'error': 'credenciales_invalidas',
-        'intentosRestantes': maxFailedAttempts - intentos,
-      };
+      // 2. Login con email+password de Firebase Auth
+      await _auth.signInWithEmailAndPassword(
+        email: data['email'],
+        password: password,
+      );
+
+      // 3. Resetear intentos fallidos
+      await doc.reference.update({'intentosFallidos': 0});
+
+      return {'success': true};
+    } on FirebaseAuthException {
+      // Incrementar intentos fallidos
+      final query = await _db
+          .collection('usuarios')
+          .where('celular', isEqualTo: celular)
+          .limit(1)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        final doc = query.docs.first;
+        final intentos = (doc.data()['intentosFallidos'] ?? 0) + 1;
+        final bloquear = intentos >= 5;
+
+        await doc.reference.update({
+          'intentosFallidos': intentos,
+          if (bloquear) 'bloqueado': true,
+        });
+
+        if (bloquear) {
+          return {'success': false, 'error': 'cuenta_bloqueada'};
+        }
+
+        return {
+          'success': false,
+          'error': 'credenciales_incorrectas',
+          'intentosRestantes': 5 - intentos,
+        };
+      }
+
+      return {'success': false, 'error': 'credenciales_incorrectas'};
     }
   }
 
-  // ─── RF03: Recuperación de Contraseña ────────────────────────────────────
+  // ── Verificar si celular ya está registrado ─────────────────────────────
+  Future<bool> isCelularRegistered(String celular) async {
+    final query = await _db
+        .collection('usuarios')
+        .where('celular', isEqualTo: celular)
+        .limit(1)
+        .get();
+    return query.docs.isNotEmpty;
+  }
 
-  // ─── RF03: Recuperación de Contraseña ────────────────────────────────────
-
-  /// Verifica OTP y permite cambiar contraseña (RF03)
-  /// El envío de OTP ya usa sendOTP() que está en RF01
-
-  /// Desbloquea cuenta por celular (RF40 - usado en recuperación)
+  // ── Desbloquear cuenta por celular (recuperar contraseña) ───────────────
   Future<void> desbloquearCuentaPorCelular(String celular) async {
     final query = await _db
         .collection('usuarios')
         .where('celular', isEqualTo: celular)
         .limit(1)
         .get();
+
     if (query.docs.isNotEmpty) {
       await query.docs.first.reference.update({
         'bloqueado': false,
@@ -154,30 +171,8 @@ class AuthService {
     }
   }
 
-  // ─── RF04: Gestión de Perfil ──────────────────────────────────────────────
-
-  Future<Map<String, dynamic>?> getUserProfile(String uid) async {
-    final doc = await _db.collection('usuarios').doc(uid).get();
-    return doc.data();
-  }
-
-  Future<void> updateUserProfile({
-    required String uid,
-    required Map<String, dynamic> data,
-  }) async {
-    await _db.collection('usuarios').doc(uid).update({
-      ...data,
-      'actualizadoEn': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // ─── RF45: Cierre de Sesión ───────────────────────────────────────────────
-
+  // ── Cerrar sesión ───────────────────────────────────────────────────────
   Future<void> signOut() async {
     await _auth.signOut();
   }
-
-  User? get currentUser => _auth.currentUser;
-
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
 }
