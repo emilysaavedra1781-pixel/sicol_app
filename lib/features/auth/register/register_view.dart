@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/auth_service.dart';
 import 'otp_verification_view.dart';
@@ -68,11 +69,23 @@ class _RegisterViewState extends State<RegisterView> {
       _errorMessage = null;
     });
 
-    // Limpiar sesión huérfana primero
-    await _authService.limpiarSesionHuerfana();
+    // Limpiar número por si acaso tiene espacios o guiones
+    final celular = _celularCtrl.text
+        .trim()
+        .replaceAll(' ', '')
+        .replaceAll('-', '');
+
+    // Validación extra del número
+    if (celular.length != 9 || !celular.startsWith('9')) {
+      setState(() {
+        _loading = false;
+        _errorMessage =
+        'El número debe tener 9 dígitos y empezar con 9.';
+      });
+      return;
+    }
 
     // EA02: Verificar si el celular ya está registrado
-    final celular = _celularCtrl.text.trim();
     final yaRegistrado = await _authService.isCelularRegistered(celular);
 
     if (!mounted) return;
@@ -80,8 +93,7 @@ class _RegisterViewState extends State<RegisterView> {
     if (yaRegistrado) {
       setState(() {
         _loading = false;
-        _errorMessage =
-        'Ya existe una cuenta con ese número de celular.';
+        _errorMessage = 'Ya existe una cuenta con ese número de celular.';
       });
       return;
     }
@@ -92,15 +104,13 @@ class _RegisterViewState extends State<RegisterView> {
 
     await _authService.sendOTP(
       phoneNumber: phoneNumber,
-      verificationCompleted: (PhoneAuthCredential credential) async {
-        // Auto-verificado en Android
-      },
+      verificationCompleted: (PhoneAuthCredential credential) async {},
       verificationFailed: (FirebaseAuthException e) {
         if (mounted) {
           setState(() {
             _loading = false;
             _errorMessage =
-            'Error al enviar OTP. Verifica el número de celular.';
+            'Error al enviar OTP. Verifica el número de celular. (${e.code})';
           });
         }
       },
@@ -149,12 +159,15 @@ class _RegisterViewState extends State<RegisterView> {
         title: const Text(
           'Crear cuenta',
           style: TextStyle(
-              color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w600),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          padding:
+          const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
           child: Form(
             key: _formKey,
             child: Column(
@@ -162,7 +175,8 @@ class _RegisterViewState extends State<RegisterView> {
               children: [
                 const Text(
                   'Ingresa tus datos',
-                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+                  style:
+                  TextStyle(color: Color(0xFF6B7280), fontSize: 14),
                 ),
                 const SizedBox(height: 24),
 
@@ -179,6 +193,10 @@ class _RegisterViewState extends State<RegisterView> {
                   hint: '12345678',
                   icon: Icons.badge_outlined,
                   keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(12),
+                  ],
                   validator: (v) => v == null || v.isEmpty
                       ? 'Ingresa tu documento'
                       : null,
@@ -197,8 +215,9 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _nombreCtrl,
                             hint: 'Juan',
                             icon: Icons.person_outline,
-                            validator: (v) =>
-                            v == null || v.isEmpty ? 'Requerido' : null,
+                            validator: (v) => v == null || v.isEmpty
+                                ? 'Requerido'
+                                : null,
                           ),
                         ],
                       ),
@@ -214,8 +233,9 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _apellidoCtrl,
                             hint: 'Pérez',
                             icon: Icons.person_outline,
-                            validator: (v) =>
-                            v == null || v.isEmpty ? 'Requerido' : null,
+                            validator: (v) => v == null || v.isEmpty
+                                ? 'Requerido'
+                                : null,
                           ),
                         ],
                       ),
@@ -224,25 +244,67 @@ class _RegisterViewState extends State<RegisterView> {
                 ),
                 const SizedBox(height: 16),
 
-                // Celular
+                // Celular — campo especial con filtro estricto
                 _buildLabel('Número de celular'),
                 const SizedBox(height: 8),
-                _buildField(
+                TextFormField(
                   controller: _celularCtrl,
-                  hint: '9XXXXXXXX',
-                  icon: Icons.phone_outlined,
-                  keyboardType: TextInputType.phone,
-                  prefix: const Padding(
-                    padding: EdgeInsets.only(left: 12, right: 4),
-                    child: Text('+51 ',
-                        style: TextStyle(
-                            color: Color(0xFF6B7280), fontSize: 14)),
-                  ),
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(9),
+                  ],
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
-                    if (v.length != 9) return '9 dígitos';
+                    if (v.length != 9) return '9 dígitos exactos';
+                    if (!v.startsWith('9')) return 'Debe empezar con 9';
                     return null;
                   },
+                  decoration: InputDecoration(
+                    hintText: '9XXXXXXXX',
+                    hintStyle:
+                    const TextStyle(color: Color(0xFF4B5563)),
+                    prefixIcon: const Padding(
+                      padding: EdgeInsets.only(left: 12, right: 4),
+                      child: Text('+51 ',
+                          style: TextStyle(
+                              color: Color(0xFF6B7280), fontSize: 14)),
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                        minWidth: 0, minHeight: 0),
+                    filled: true,
+                    fillColor: const Color(0xFF111827),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide:
+                      const BorderSide(color: Color(0xFF1F2937)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide:
+                      const BorderSide(color: Color(0xFF1F2937)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(
+                          color: Color(0xFF1E6BFF), width: 1.5),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide:
+                      const BorderSide(color: Color(0xFFFF3B30)),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(
+                          color: Color(0xFFFF3B30), width: 1.5),
+                    ),
+                    errorStyle: const TextStyle(
+                        color: Color(0xFFFF3B30), fontSize: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 16),
+                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -272,8 +334,9 @@ class _RegisterViewState extends State<RegisterView> {
                       controller: _fechaCtrl,
                       hint: 'DD/MM/AAAA',
                       icon: Icons.calendar_today_outlined,
-                      validator: (v) =>
-                      v == null || v.isEmpty ? 'Requerido' : null,
+                      validator: (v) => v == null || v.isEmpty
+                          ? 'Requerido'
+                          : null,
                     ),
                   ),
                 ),
@@ -329,7 +392,8 @@ class _RegisterViewState extends State<RegisterView> {
                         : const Text(
                       'Continuar y verificar',
                       style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -347,8 +411,8 @@ class _RegisterViewState extends State<RegisterView> {
     decoration: BoxDecoration(
       color: const Color(0xFFFF3B30).withOpacity(0.12),
       borderRadius: BorderRadius.circular(12),
-      border:
-      Border.all(color: const Color(0xFFFF3B30).withOpacity(0.3)),
+      border: Border.all(
+          color: const Color(0xFFFF3B30).withOpacity(0.3)),
     ),
     child: Row(
       children: [
@@ -381,12 +445,14 @@ class _RegisterViewState extends State<RegisterView> {
     bool obscure = false,
     Widget? suffixIcon,
     Widget? prefix,
+    List<TextInputFormatter>? inputFormatters,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       obscureText: obscure,
+      inputFormatters: inputFormatters,
       style: const TextStyle(color: Colors.white, fontSize: 15),
       validator: validator,
       decoration: InputDecoration(
