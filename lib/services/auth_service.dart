@@ -1,16 +1,20 @@
-// ── Stream estado de autenticación ─────────────────────────────────────
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+// ─── MODO PRUEBA ───────────────────────────────────────────────────────────────
+// Cambiar a false cuando vayas a producción real
+const bool kModoSimulacion = true;
+const String kCodigoPrueba = '123456';
+// ──────────────────────────────────────────────────────────────────────────────
 
 class AuthService {
   final _auth = FirebaseAuth.instance;
   final _db = FirebaseFirestore.instance;
+
   // ── Stream estado de autenticación ─────────────────────────────────────
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-
-  // ── Verificar OTP ───────────────────────────────────────────────────────
+  // ── Enviar OTP ──────────────────────────────────────────────────────────
   Future<void> sendOTP({
     required String phoneNumber,
     required Function(PhoneAuthCredential) verificationCompleted,
@@ -18,11 +22,13 @@ class AuthService {
     required Function(String, int?) codeSent,
     required Function(String) codeAutoRetrievalTimeout,
   }) async {
-
-    // Solo para desarrollo
-    await _auth.setSettings(
-      appVerificationDisabledForTesting: false,
-    );
+    if (kModoSimulacion) {
+      // Simula que el SMS fue enviado — no llama a Firebase
+      // Usa el número como verificationId temporal
+      await Future.delayed(const Duration(milliseconds: 800));
+      codeSent('simulacion_$phoneNumber', null);
+      return;
+    }
 
     await _auth.verifyPhoneNumber(
       phoneNumber: phoneNumber,
@@ -38,13 +44,28 @@ class AuthService {
     required String verificationId,
     required String smsCode,
   }) async {
+    if (kModoSimulacion) {
+      if (smsCode != kCodigoPrueba) {
+        throw FirebaseAuthException(
+          code: 'invalid-verification-code',
+          message: 'Código incorrecto. Usa $kCodigoPrueba en modo prueba.',
+        );
+      }
+      // Extrae el número del verificationId simulado
+      final phoneNumber = verificationId.replaceFirst('simulacion_', '');
+      // Inicia sesión anónima para obtener un uid real
+      final credential = await _auth.signInAnonymously();
+      return credential;
+    }
+
     final credential = PhoneAuthProvider.credential(
       verificationId: verificationId,
       smsCode: smsCode,
     );
     return await _auth.signInWithCredential(credential);
   }
-  // ── Registro: vincula email+pass al usuario phone y guarda en Firestore ─
+
+  // ── Registro: vincula email+pass al usuario y guarda en Firestore ───────
   Future<void> registerUser({
     required String uid,
     required String dni,
@@ -55,14 +76,16 @@ class AuthService {
     required String password,
     required String fechaNacimiento,
   }) async {
-    // Vincular email+password al usuario de teléfono ya autenticado
-    final emailCredential = EmailAuthProvider.credential(
-      email: email,
-      password: password,
-    );
-    await _auth.currentUser!.linkWithCredential(emailCredential);
+    if (!kModoSimulacion) {
+      // En producción vincula email+password al usuario de teléfono
+      final emailCredential = EmailAuthProvider.credential(
+        email: email,
+        password: password,
+      );
+      await _auth.currentUser!.linkWithCredential(emailCredential);
+    }
 
-    // Guardar perfil en Firestore
+    // Guardar perfil en Firestore (funciona en ambos modos)
     await _db.collection('usuarios').doc(uid).set({
       'uid': uid,
       'dni': dni,
@@ -84,7 +107,6 @@ class AuthService {
     required String password,
   }) async {
     try {
-      // 1. Buscar email asociado al celular en Firestore
       final query = await _db
           .collection('usuarios')
           .where('celular', isEqualTo: celular)
@@ -102,18 +124,15 @@ class AuthService {
         return {'success': false, 'error': 'cuenta_bloqueada'};
       }
 
-      // 2. Login con email+password de Firebase Auth
       await _auth.signInWithEmailAndPassword(
         email: data['email'],
         password: password,
       );
 
-      // 3. Resetear intentos fallidos
       await doc.reference.update({'intentosFallidos': 0});
 
       return {'success': true};
     } on FirebaseAuthException {
-      // Incrementar intentos fallidos
       final query = await _db
           .collection('usuarios')
           .where('celular', isEqualTo: celular)
@@ -155,7 +174,7 @@ class AuthService {
     return query.docs.isNotEmpty;
   }
 
-  // ── Desbloquear cuenta por celular (recuperar contraseña) ───────────────
+  // ── Desbloquear cuenta por celular ──────────────────────────────────────
   Future<void> desbloquearCuentaPorCelular(String celular) async {
     final query = await _db
         .collection('usuarios')
@@ -170,7 +189,6 @@ class AuthService {
       });
     }
   }
-
 
   // ── Limpiar sesión huérfana ─────────────────────────────────────────────
   Future<void> limpiarSesionHuerfana() async {
@@ -188,3 +206,4 @@ class AuthService {
     await _auth.signOut();
   }
 }
+ 
