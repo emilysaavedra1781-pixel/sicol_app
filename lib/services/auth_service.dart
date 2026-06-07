@@ -24,7 +24,6 @@ class AuthService {
   }) async {
     if (kModoSimulacion) {
       // Simula que el SMS fue enviado — no llama a Firebase
-      // Usa el número como verificationId temporal
       await Future.delayed(const Duration(milliseconds: 800));
       codeSent('simulacion_$phoneNumber', null);
       return;
@@ -39,22 +38,29 @@ class AuthService {
     );
   }
 
-  // ── Verificar OTP ───────────────────────────────────────────────────────
   Future<UserCredential> verifyOTP({
     required String verificationId,
     required String smsCode,
   }) async {
     if (kModoSimulacion) {
-      if (smsCode != kCodigoPrueba) {
+      print('🧪 Modo simulación - código recibido: $smsCode');
+      if (smsCode.trim() != kCodigoPrueba) {
         throw FirebaseAuthException(
           code: 'invalid-verification-code',
-          message: 'Código incorrecto. Usa $kCodigoPrueba en modo prueba.',
+          message: 'Código incorrecto.',
         );
       }
-      // Extrae el número del verificationId simulado
-      final phoneNumber = verificationId.replaceFirst('simulacion_', '');
-      // Inicia sesión anónima para obtener un uid real
+      print('✅ Código correcto, iniciando sesión anónima...');
+      try {
+        final credential = await _auth.signInAnonymously();
+        print('✅ Sesión iniciada: ${credential.user?.uid}');
+        return credential;
+      } catch (e) {
+        print('❌ Error en signInAnonymously: $e');
+        rethrow;
+      }
       final credential = await _auth.signInAnonymously();
+      print('✅ Sesión iniciada: ${credential.user?.uid}');
       return credential;
     }
 
@@ -64,7 +70,6 @@ class AuthService {
     );
     return await _auth.signInWithCredential(credential);
   }
-
   // ── Registro: vincula email+pass al usuario y guarda en Firestore ───────
   Future<void> registerUser({
     required String uid,
@@ -206,4 +211,3 @@ class AuthService {
     await _auth.signOut();
   }
 }
- 

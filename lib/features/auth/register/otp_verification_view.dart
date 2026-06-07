@@ -32,7 +32,6 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
   int _intentosFallidos = 0;
   static const int maxIntentos = 3;
 
-  // Reenvío de código
   late String _verificationId;
   bool _reenviando = false;
   int _segundos = 60;
@@ -45,17 +44,17 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
     _iniciarContador();
   }
 
-  String get _otpCode => _controllers.map((c) => c.text).join();
+  // ✅ FIX: lee cada controller individualmente para evitar
+  //         el problema de timing con el último dígito
+  String get _otpCode {
+    return _controllers.map((c) => c.text).join();
+  }
 
   @override
   void dispose() {
     _timer?.cancel();
-    for (final c in _controllers) {
-      c.dispose();
-    }
-    for (final f in _focusNodes) {
-      f.dispose();
-    }
+    for (final c in _controllers) c.dispose();
+    for (final f in _focusNodes) f.dispose();
     super.dispose();
   }
 
@@ -63,7 +62,10 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
     _timer?.cancel();
     setState(() => _segundos = 60);
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) { t.cancel(); return; }
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
       if (_segundos <= 1) {
         t.cancel();
         setState(() => _segundos = 0);
@@ -75,7 +77,10 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
 
   Future<void> _reenviarCodigo() async {
     if (_segundos > 0 || _reenviando) return;
-    setState(() { _reenviando = true; _errorMessage = null; });
+    setState(() {
+      _reenviando = true;
+      _errorMessage = null;
+    });
 
     await _authService.sendOTP(
       phoneNumber: widget.phoneNumber,
@@ -91,7 +96,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
         if (!mounted) return;
         _verificationId = nuevoVId;
         _intentosFallidos = 0;
-        for (final c in _controllers) { c.clear(); }
+        for (final c in _controllers) c.clear();
         _focusNodes[0].requestFocus();
         setState(() => _reenviando = false);
         _iniciarContador();
@@ -100,11 +105,14 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
             content: const Text('Código reenviado exitosamente'),
             backgroundColor: const Color(0xFF10B981),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       },
-      codeAutoRetrievalTimeout: (vId) { _verificationId = vId; },
+      codeAutoRetrievalTimeout: (vId) {
+        if (!kModoSimulacion) _verificationId = vId;
+      },
     );
   }
 
@@ -114,11 +122,24 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
     } else if (value.isEmpty && index > 0) {
       _focusNodes[index - 1].requestFocus();
     }
-    if (_otpCode.length == 6) _verifyOtp();
+
+    // ✅ FIX PRINCIPAL: usar Future.microtask para esperar que el
+    //    controller del último campo termine de actualizarse
+    //    antes de leer _otpCode
+    Future.microtask(() {
+      if (_otpCode.length == 6 && !_loading) {
+        _verifyOtp();
+      }
+    });
   }
 
   Future<void> _verifyOtp() async {
-    if (_otpCode.length != 6) return;
+    final code = _otpCode;
+
+    // Debug temporal — bórralo cuando funcione
+    debugPrint('🔑 Código leído: "$code" (longitud: ${code.length})');
+
+    if (code.length != 6) return;
     if (_intentosFallidos >= maxIntentos) return;
 
     setState(() {
@@ -130,7 +151,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
       // Paso 1: verificar OTP
       final userCredential = await _authService.verifyOTP(
         verificationId: _verificationId,
-        smsCode: _otpCode,
+        smsCode: code,
       );
 
       // Paso 2: registrar en Firestore
@@ -152,7 +173,8 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
           content: const Text('¡Cuenta creada exitosamente!'),
           backgroundColor: const Color(0xFF10B981),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
 
@@ -162,7 +184,6 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
             (route) => false,
       );
     } on FirebaseAuthException catch (e) {
-      // Error de código incorrecto o expirado
       if (!mounted) return;
       _intentosFallidos++;
       final restantes = maxIntentos - _intentosFallidos;
@@ -172,18 +193,17 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
         _errorMessage = _intentosFallidos >= maxIntentos
             ? 'Código incorrecto. Agotaste los intentos. Vuelve atrás.'
             : 'Código incorrecto ($restantes intento(s) restante(s)). [${e.code}]';
-        for (final c in _controllers) {
-          c.clear();
-        }
-        _focusNodes[0].requestFocus();
+        for (final c in _controllers) c.clear();
       });
+      _focusNodes[0].requestFocus();
     } catch (e) {
-      // Atrapa "missing initial state" y cualquier otro error
       if (!mounted) return;
       setState(() {
         _loading = false;
         _errorMessage = 'Error de verificación: ${e.toString()}';
+        for (final c in _controllers) c.clear();
       });
+      _focusNodes[0].requestFocus();
     }
   }
 
@@ -197,7 +217,8 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -220,6 +241,31 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
                 style: const TextStyle(
                     color: Color(0xFF6B7280), fontSize: 14, height: 1.5),
               ),
+              if (kModoSimulacion) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E6BFF).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: const Color(0xFF1E6BFF).withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.info_outline,
+                          color: Color(0xFF1E6BFF), size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'Modo prueba: usa el código 123456',
+                        style:
+                        TextStyle(color: Color(0xFF1E6BFF), fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 40),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -234,7 +280,9 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
                       keyboardType: TextInputType.number,
                       maxLength: 1,
                       enabled: !agotado && !_loading,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly
+                      ],
                       style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
@@ -245,11 +293,13 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
                         fillColor: const Color(0xFF111827),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFF1F2937)),
+                          borderSide:
+                          const BorderSide(color: Color(0xFF1F2937)),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFF1F2937)),
+                          borderSide:
+                          const BorderSide(color: Color(0xFF1F2937)),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -264,7 +314,6 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
               ),
               const SizedBox(height: 24),
 
-              // Botón reenviar código
               Center(
                 child: _reenviando
                     ? const SizedBox(
@@ -296,7 +345,8 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
                     color: const Color(0xFFFF3B30).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: const Color(0xFFFF3B30).withValues(alpha: 0.3)),
+                        color:
+                        const Color(0xFFFF3B30).withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [
@@ -313,7 +363,9 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
                     ],
                   ),
                 ),
+
               const SizedBox(height: 32),
+
               if (!agotado)
                 SizedBox(
                   width: double.infinity,
@@ -338,6 +390,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
                             fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                 ),
+
               if (agotado)
                 SizedBox(
                   width: double.infinity,
