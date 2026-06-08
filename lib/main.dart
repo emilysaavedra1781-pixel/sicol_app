@@ -15,6 +15,13 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Agrega esto:
+  await FirebaseAuth.instance.setSettings(
+    appVerificationDisabledForTesting: true,
+    forceRecaptchaFlow: false,
+  );
+
   runApp(const MyApp());
 }
 

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/auth_service.dart';
 import 'otp_verification_view.dart';
 
@@ -69,8 +68,7 @@ class _RegisterViewState extends State<RegisterView> {
       context: context,
       initialDate: DateTime(2000),
       firstDate: DateTime(1950),
-      lastDate:
-      DateTime.now().subtract(const Duration(days: 365 * 18)),
+      lastDate: DateTime.now().subtract(const Duration(days: 365 * 18)),
       builder: (context, child) => Theme(
         data: ThemeData.dark().copyWith(
           colorScheme: const ColorScheme.dark(
@@ -103,27 +101,23 @@ class _RegisterViewState extends State<RegisterView> {
     if (celular.length != 9 || !celular.startsWith('9')) {
       setState(() {
         _loading = false;
-        _errorMessage =
-        'El número debe tener 9 dígitos y empezar con 9.';
+        _errorMessage = 'El número debe tener 9 dígitos y empezar con 9.';
       });
       return;
     }
 
     // Verificar duplicados
-    final celularRegistrado =
-    await _authService.isCelularRegistered(celular);
+    final celularRegistrado = await _authService.isCelularRegistered(celular);
     if (!mounted) return;
     if (celularRegistrado) {
       setState(() {
         _loading = false;
-        _errorMessage =
-        'Ya existe una cuenta con ese número de celular.';
+        _errorMessage = 'Ya existe una cuenta con ese número de celular.';
       });
       return;
     }
 
-    final dniRegistrado =
-    await _authService.isDniRegistered(_dniCtrl.text.trim());
+    final dniRegistrado = await _authService.isDniRegistered(_dniCtrl.text.trim());
     if (!mounted) return;
     if (dniRegistrado) {
       setState(() {
@@ -133,7 +127,6 @@ class _RegisterViewState extends State<RegisterView> {
       return;
     }
 
-    // EA01 RF53: verificar placa duplicada
     if (_rolSeleccionado == 'conductor') {
       final placaRegistrada = await _authService
           .isPlacaRegistered(_placaCtrl.text.trim().toUpperCase());
@@ -147,59 +140,37 @@ class _RegisterViewState extends State<RegisterView> {
       }
     }
 
-    final phoneNumber = '+51$celular';
-    String? verificationId;
+    // MODO PRUEBA: saltar envío de OTP, ir directo a pantalla de verificación
+    setState(() => _loading = false);
 
-    await _authService.sendOTP(
-      phoneNumber: phoneNumber,
-      verificationCompleted: (PhoneAuthCredential credential) async {},
-      verificationFailed: (FirebaseAuthException e) {
-        if (mounted) {
-          setState(() {
-            _loading = false;
-            _errorMessage = 'Error al enviar OTP. (${e.code})';
-          });
-        }
-      },
-      codeSent: (String vId, int? resendToken) {
-        verificationId = vId;
-        if (mounted) {
-          setState(() => _loading = false);
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OtpVerificationView(
-                verificationId: verificationId!,
-                phoneNumber: phoneNumber,
-                userData: {
-                  'rol': _rolSeleccionado,
-                  'dni': _dniCtrl.text.trim(),
-                  'nombre': _nombreCtrl.text.trim(),
-                  'apellido': _apellidoCtrl.text.trim(),
-                  'celular': celular,
-                  'email': _emailCtrl.text.trim(),
-                  'password': _passCtrl.text,
-                  'fechaNacimiento': _fechaCtrl.text,
-                  // Solo conductor
-                  if (_rolSeleccionado == 'conductor') ...{
-                    'numeroLicencia': _licenciaCtrl.text.trim(),
-                    'placa': _placaCtrl.text
-                        .trim()
-                        .toUpperCase(),
-                    'capacidad': _capacidadCtrl.text.trim(),
-                    'modelo': _modeloCtrl.text.trim(),
-                    'marca': _marcaCtrl.text.trim(),
-                    'color': _colorCtrl.text.trim(),
-                  },
-                },
-              ),
-            ),
-          );
-        }
-      },
-      codeAutoRetrievalTimeout: (String vId) {
-        verificationId = vId;
-      },
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OtpVerificationView(
+          verificationId: 'test-verification-id',
+          phoneNumber: '+51$celular',
+          userData: {
+            'rol': _rolSeleccionado,
+            'dni': _dniCtrl.text.trim(),
+            'nombre': _nombreCtrl.text.trim(),
+            'apellido': _apellidoCtrl.text.trim(),
+            'celular': celular,
+            'email': _emailCtrl.text.trim(),
+            'password': _passCtrl.text,
+            'fechaNacimiento': _fechaCtrl.text,
+            if (_rolSeleccionado == 'conductor') ...{
+              'numeroLicencia': _licenciaCtrl.text.trim(),
+              'placa': _placaCtrl.text.trim().toUpperCase(),
+              'capacidad': _capacidadCtrl.text.trim(),
+              'modelo': _modeloCtrl.text.trim(),
+              'marca': _marcaCtrl.text.trim(),
+              'color': _colorCtrl.text.trim(),
+            },
+          },
+        ),
+      ),
     );
   }
 
@@ -211,28 +182,23 @@ class _RegisterViewState extends State<RegisterView> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: Colors.white, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text('Crear cuenta',
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600)),
+                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 28, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Ingresa tus datos',
-                    style: TextStyle(
-                        color: Color(0xFF6B7280), fontSize: 14)),
+                    style: TextStyle(color: Color(0xFF6B7280), fontSize: 14)),
                 const SizedBox(height: 24),
 
                 if (_errorMessage != null) ...[
@@ -247,21 +213,17 @@ class _RegisterViewState extends State<RegisterView> {
                   decoration: BoxDecoration(
                     color: const Color(0xFF111827),
                     borderRadius: BorderRadius.circular(14),
-                    border:
-                    Border.all(color: const Color(0xFF1F2937)),
+                    border: Border.all(color: const Color(0xFF1F2937)),
                   ),
                   child: Row(
                     children: [
-                      _rolButton('pasajero', 'Pasajero',
-                          Icons.person_outline),
-                      _rolButton('conductor', 'Conductor',
-                          Icons.drive_eta_outlined),
+                      _rolButton('pasajero', 'Pasajero', Icons.person_outline),
+                      _rolButton('conductor', 'Conductor', Icons.drive_eta_outlined),
                     ],
                   ),
                 ),
                 const SizedBox(height: 24),
 
-                // ── Datos personales ──────────────────────────────
                 _seccionTitulo('Datos personales'),
                 const SizedBox(height: 16),
 
@@ -276,9 +238,8 @@ class _RegisterViewState extends State<RegisterView> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(12),
                   ],
-                  validator: (v) => v == null || v.isEmpty
-                      ? 'Ingresa tu documento'
-                      : null,
+                  validator: (v) =>
+                  v == null || v.isEmpty ? 'Ingresa tu documento' : null,
                 ),
                 const SizedBox(height: 16),
 
@@ -286,8 +247,7 @@ class _RegisterViewState extends State<RegisterView> {
                   children: [
                     Expanded(
                       child: Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildLabel('Nombre'),
                           const SizedBox(height: 8),
@@ -296,9 +256,7 @@ class _RegisterViewState extends State<RegisterView> {
                             hint: 'Juan',
                             icon: Icons.person_outline,
                             validator: (v) =>
-                            v == null || v.isEmpty
-                                ? 'Requerido'
-                                : null,
+                            v == null || v.isEmpty ? 'Requerido' : null,
                           ),
                         ],
                       ),
@@ -306,8 +264,7 @@ class _RegisterViewState extends State<RegisterView> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildLabel('Apellido'),
                           const SizedBox(height: 8),
@@ -316,9 +273,7 @@ class _RegisterViewState extends State<RegisterView> {
                             hint: 'Pérez',
                             icon: Icons.person_outline,
                             validator: (v) =>
-                            v == null || v.isEmpty
-                                ? 'Requerido'
-                                : null,
+                            v == null || v.isEmpty ? 'Requerido' : null,
                           ),
                         ],
                       ),
@@ -332,8 +287,7 @@ class _RegisterViewState extends State<RegisterView> {
                 TextFormField(
                   controller: _celularCtrl,
                   keyboardType: TextInputType.number,
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 15),
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(9),
@@ -341,53 +295,46 @@ class _RegisterViewState extends State<RegisterView> {
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
                     if (v.length != 9) return '9 dígitos exactos';
-                    if (!v.startsWith('9'))
-                      return 'Debe empezar con 9';
+                    if (!v.startsWith('9')) return 'Debe empezar con 9';
                     return null;
                   },
                   decoration: InputDecoration(
                     hintText: '9XXXXXXXX',
-                    hintStyle: const TextStyle(
-                        color: Color(0xFF4B5563)),
+                    hintStyle: const TextStyle(color: Color(0xFF4B5563)),
                     prefixIcon: const Padding(
-                      padding:
-                      EdgeInsets.only(left: 12, right: 4),
+                      padding: EdgeInsets.only(left: 12, right: 4),
                       child: Text('+51 ',
                           style: TextStyle(
-                              color: Color(0xFF6B7280),
-                              fontSize: 14)),
+                              color: Color(0xFF6B7280), fontSize: 14)),
                     ),
-                    prefixIconConstraints: const BoxConstraints(
-                        minWidth: 0, minHeight: 0),
+                    prefixIconConstraints:
+                    const BoxConstraints(minWidth: 0, minHeight: 0),
                     filled: true,
                     fillColor: const Color(0xFF111827),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(
-                          color: Color(0xFF1F2937)),
+                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(
-                          color: Color(0xFF1F2937)),
+                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(
-                          color: Color(0xFF1E6BFF), width: 1.5),
+                      borderSide:
+                      const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
                     ),
                     errorBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(
-                          color: Color(0xFFFF3B30)),
+                      borderSide: const BorderSide(color: Color(0xFFFF3B30)),
                     ),
                     focusedErrorBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(
-                          color: Color(0xFFFF3B30), width: 1.5),
+                      borderSide:
+                      const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
                     ),
-                    errorStyle: const TextStyle(
-                        color: Color(0xFFFF3B30), fontSize: 12),
+                    errorStyle:
+                    const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 16),
                   ),
@@ -418,15 +365,13 @@ class _RegisterViewState extends State<RegisterView> {
                       controller: _fechaCtrl,
                       hint: 'DD/MM/AAAA',
                       icon: Icons.calendar_today_outlined,
-                      validator: (v) => v == null || v.isEmpty
-                          ? 'Requerido'
-                          : null,
+                      validator: (v) =>
+                      v == null || v.isEmpty ? 'Requerido' : null,
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
 
-                // Número de licencia (solo conductor)
                 if (_rolSeleccionado == 'conductor') ...[
                   _buildLabel('Número de licencia'),
                   const SizedBox(height: 8),
@@ -434,9 +379,8 @@ class _RegisterViewState extends State<RegisterView> {
                     controller: _licenciaCtrl,
                     hint: 'Q12345678',
                     icon: Icons.card_membership_outlined,
-                    validator: (v) => v == null || v.isEmpty
-                        ? 'Requerido'
-                        : null,
+                    validator: (v) =>
+                    v == null || v.isEmpty ? 'Requerido' : null,
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -456,8 +400,8 @@ class _RegisterViewState extends State<RegisterView> {
                       color: const Color(0xFF6B7280),
                       size: 20,
                     ),
-                    onPressed: () => setState(
-                            () => _obscurePass = !_obscurePass),
+                    onPressed: () =>
+                        setState(() => _obscurePass = !_obscurePass),
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
@@ -466,7 +410,6 @@ class _RegisterViewState extends State<RegisterView> {
                   },
                 ),
 
-                // ── Datos del vehículo (solo conductor) ───────────
                 if (_rolSeleccionado == 'conductor') ...[
                   const SizedBox(height: 24),
                   _seccionTitulo('Datos del vehículo'),
@@ -478,11 +421,9 @@ class _RegisterViewState extends State<RegisterView> {
                     controller: _placaCtrl,
                     hint: 'ABC-123',
                     icon: Icons.directions_car_outlined,
-                    textCapitalization:
-                    TextCapitalization.characters,
-                    validator: (v) => v == null || v.isEmpty
-                        ? 'Requerido'
-                        : null,
+                    textCapitalization: TextCapitalization.characters,
+                    validator: (v) =>
+                    v == null || v.isEmpty ? 'Requerido' : null,
                   ),
                   const SizedBox(height: 16),
 
@@ -490,8 +431,7 @@ class _RegisterViewState extends State<RegisterView> {
                     children: [
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildLabel('Marca'),
                             const SizedBox(height: 8),
@@ -500,9 +440,7 @@ class _RegisterViewState extends State<RegisterView> {
                               hint: 'Toyota',
                               icon: Icons.directions_car_outlined,
                               validator: (v) =>
-                              v == null || v.isEmpty
-                                  ? 'Requerido'
-                                  : null,
+                              v == null || v.isEmpty ? 'Requerido' : null,
                             ),
                           ],
                         ),
@@ -510,8 +448,7 @@ class _RegisterViewState extends State<RegisterView> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildLabel('Modelo'),
                             const SizedBox(height: 8),
@@ -520,9 +457,7 @@ class _RegisterViewState extends State<RegisterView> {
                               hint: 'Corolla',
                               icon: Icons.directions_car_outlined,
                               validator: (v) =>
-                              v == null || v.isEmpty
-                                  ? 'Requerido'
-                                  : null,
+                              v == null || v.isEmpty ? 'Requerido' : null,
                             ),
                           ],
                         ),
@@ -535,8 +470,7 @@ class _RegisterViewState extends State<RegisterView> {
                     children: [
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildLabel('Color'),
                             const SizedBox(height: 8),
@@ -545,9 +479,7 @@ class _RegisterViewState extends State<RegisterView> {
                               hint: 'Blanco',
                               icon: Icons.color_lens_outlined,
                               validator: (v) =>
-                              v == null || v.isEmpty
-                                  ? 'Requerido'
-                                  : null,
+                              v == null || v.isEmpty ? 'Requerido' : null,
                             ),
                           ],
                         ),
@@ -555,8 +487,7 @@ class _RegisterViewState extends State<RegisterView> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildLabel('Capacidad'),
                             const SizedBox(height: 8),
@@ -566,13 +497,10 @@ class _RegisterViewState extends State<RegisterView> {
                               icon: Icons.people_outline,
                               keyboardType: TextInputType.number,
                               inputFormatters: [
-                                FilteringTextInputFormatter
-                                    .digitsOnly,
+                                FilteringTextInputFormatter.digitsOnly,
                               ],
                               validator: (v) =>
-                              v == null || v.isEmpty
-                                  ? 'Requerido'
-                                  : null,
+                              v == null || v.isEmpty ? 'Requerido' : null,
                             ),
                           ],
                         ),
@@ -600,12 +528,10 @@ class _RegisterViewState extends State<RegisterView> {
                         width: 22,
                         height: 22,
                         child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2.5))
+                            color: Colors.white, strokeWidth: 2.5))
                         : const Text('Continuar y verificar',
                         style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600)),
+                            fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -619,13 +545,12 @@ class _RegisterViewState extends State<RegisterView> {
 
   Widget _seccionTitulo(String texto) => Container(
     width: double.infinity,
-    padding: const EdgeInsets.symmetric(
-        horizontal: 12, vertical: 8),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
       color: const Color(0xFF1E6BFF).withOpacity(0.12),
       borderRadius: BorderRadius.circular(8),
-      border: Border.all(
-          color: const Color(0xFF1E6BFF).withOpacity(0.3)),
+      border:
+      Border.all(color: const Color(0xFF1E6BFF).withOpacity(0.3)),
     ),
     child: Text(texto,
         style: const TextStyle(
@@ -645,25 +570,20 @@ class _RegisterViewState extends State<RegisterView> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFF1E6BFF)
-                : Colors.transparent,
+            color: selected ? const Color(0xFF1E6BFF) : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon,
-                  color: selected
-                      ? Colors.white
-                      : const Color(0xFF6B7280),
+                  color: selected ? Colors.white : const Color(0xFF6B7280),
                   size: 18),
               const SizedBox(width: 6),
               Text(label,
                   style: TextStyle(
-                      color: selected
-                          ? Colors.white
-                          : const Color(0xFF6B7280),
+                      color:
+                      selected ? Colors.white : const Color(0xFF6B7280),
                       fontSize: 14,
                       fontWeight: FontWeight.w500)),
             ],
@@ -710,8 +630,7 @@ class _RegisterViewState extends State<RegisterView> {
     Widget? suffixIcon,
     Widget? prefix,
     List<TextInputFormatter>? inputFormatters,
-    TextCapitalization textCapitalization =
-        TextCapitalization.none,
+    TextCapitalization textCapitalization = TextCapitalization.none,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
@@ -732,33 +651,30 @@ class _RegisterViewState extends State<RegisterView> {
         fillColor: const Color(0xFF111827),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFF1F2937)),
+          borderSide: const BorderSide(color: Color(0xFF1F2937)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFF1F2937)),
+          borderSide: const BorderSide(color: Color(0xFF1F2937)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-              color: Color(0xFF1E6BFF), width: 1.5),
+          borderSide:
+          const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFFFF3B30)),
+          borderSide: const BorderSide(color: Color(0xFFFF3B30)),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-              color: Color(0xFFFF3B30), width: 1.5),
+          borderSide:
+          const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
         ),
-        errorStyle: const TextStyle(
-            color: Color(0xFFFF3B30), fontSize: 12),
-        contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16, vertical: 16),
+        errorStyle:
+        const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
+        contentPadding:
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
     );
   }

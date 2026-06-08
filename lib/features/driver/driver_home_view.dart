@@ -2,18 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
+import '../../services/trip_service.dart';
 import '../auth/login/login_view.dart';
+import 'driver_trip_view.dart';
 
-class DriverHomeView extends StatelessWidget {
+class DriverHomeView extends StatefulWidget {
   const DriverHomeView({super.key});
 
-  Future<void> _logout(BuildContext context) async {
+  @override
+  State<DriverHomeView> createState() => _DriverHomeViewState();
+}
+
+class _DriverHomeViewState extends State<DriverHomeView> {
+  final _tripService = TripService();
+  bool _iniciando = false;
+
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF111827),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Cerrar sesión',
             style: TextStyle(color: Colors.white)),
         content: const Text(
@@ -35,13 +44,122 @@ class DriverHomeView extends StatelessWidget {
       ),
     );
 
-    if (confirm == true && context.mounted) {
+    if (confirm == true && mounted) {
       await AuthService().signOut();
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const LoginView()),
             (route) => false,
       );
+    }
+  }
+
+  Future<void> _mostrarDialogoIniciarViaje(
+      Map<String, dynamic> conductorData) async {
+    String? rutaSeleccionada;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          backgroundColor: const Color(0xFF111827),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20)),
+          title: const Text('Iniciar viaje',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Selecciona la ruta:',
+                  style:
+                  TextStyle(color: Color(0xFF6B7280), fontSize: 14)),
+              const SizedBox(height: 16),
+              _rutaOption(
+                ctx: ctx,
+                ruta: 'chosica_lima',
+                label: 'Chosica → Lima',
+                icon: Icons.arrow_forward_rounded,
+                seleccionada: rutaSeleccionada,
+                onTap: () => setStateDialog(
+                        () => rutaSeleccionada = 'chosica_lima'),
+              ),
+              const SizedBox(height: 10),
+              _rutaOption(
+                ctx: ctx,
+                ruta: 'lima_chosica',
+                label: 'Lima → Chosica',
+                icon: Icons.arrow_back_rounded,
+                seleccionada: rutaSeleccionada,
+                onTap: () => setStateDialog(
+                        () => rutaSeleccionada = 'lima_chosica'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar',
+                  style: TextStyle(color: Color(0xFF6B7280))),
+            ),
+            ElevatedButton(
+              onPressed: rutaSeleccionada == null
+                  ? null
+                  : () {
+                Navigator.pop(ctx);
+                _iniciarViaje(conductorData, rutaSeleccionada!);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E6BFF),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              child: const Text('Iniciar',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _iniciarViaje(
+      Map<String, dynamic> conductorData, String ruta) async {
+    setState(() => _iniciando = true);
+    try {
+      final viajeId = await _tripService.iniciarViaje(
+        ruta: ruta,
+        conductorData: conductorData,
+      );
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DriverTripView(
+            viajeId: viajeId,
+            conductorData: conductorData,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: const Color(0xFFFF3B30),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _iniciando = false);
     }
   }
 
@@ -61,239 +179,335 @@ class DriverHomeView extends StatelessWidget {
                 fontWeight: FontWeight.w600)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout,
-                color: Color(0xFF6B7280)),
+            icon: const Icon(Icons.logout, color: Color(0xFF6B7280)),
             tooltip: 'Cerrar sesión',
-            onPressed: () => _logout(context),
+            onPressed: _logout,
           ),
         ],
       ),
       body: uid == null
           ? const Center(
-          child: CircularProgressIndicator(
-              color: Color(0xFF1E6BFF)))
+          child: CircularProgressIndicator(color: Color(0xFF1E6BFF)))
           : FutureBuilder<DocumentSnapshot>(
         future: FirebaseFirestore.instance
             .collection('usuarios')
             .doc(uid)
             .get(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState ==
-              ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
-              child: CircularProgressIndicator(
-                  color: Color(0xFF1E6BFF)),
+              child: CircularProgressIndicator(color: Color(0xFF1E6BFF)),
             );
           }
 
-          if (!snapshot.hasData ||
-              !snapshot.data!.exists) {
+          if (!snapshot.hasData || !snapshot.data!.exists) {
             return const Center(
               child: Text('Error al cargar datos.',
-                  style:
-                  TextStyle(color: Colors.white)),
+                  style: TextStyle(color: Colors.white)),
             );
           }
 
-          final data = snapshot.data!.data()
-          as Map<String, dynamic>;
+          final data =
+          snapshot.data!.data() as Map<String, dynamic>;
           final nombre = data['nombre'] ?? '';
           final apellido = data['apellido'] ?? '';
-          final codigo =
-              data['codigoConductor'] ?? '-';
+          final codigo = data['codigoConductor'] ?? '-';
           final vehiculo =
-              data['vehiculo'] as Map<String, dynamic>? ??
-                  {};
+              data['vehiculo'] as Map<String, dynamic>? ?? {};
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 28, vertical: 32),
-            child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
-              children: [
-                // Bienvenida
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF1E6BFF),
-                        Color(0xFF0A4BCC),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius:
-                    BorderRadius.circular(20),
-                  ),
-                  child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                          Icons.drive_eta_rounded,
-                          color: Colors.white,
-                          size: 40),
-                      const SizedBox(height: 12),
-                      Text(
-                        '¡Bienvenido, $nombre!',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight:
-                            FontWeight.w700),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Panel del conductor',
-                        style: TextStyle(
-                            color: Color(0xFFBFD7FF),
-                            fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
+          return StreamBuilder<QuerySnapshot>(
+            stream: _tripService.getViajeActivoStream(),
+            builder: (context, tripSnap) {
+              final tieneViajeActivo = tripSnap.hasData &&
+                  tripSnap.data!.docs.isNotEmpty;
+              final viajeDoc = tieneViajeActivo
+                  ? tripSnap.data!.docs.first
+                  : null;
 
-                // Código de conductor
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111827),
-                    borderRadius:
-                    BorderRadius.circular(16),
-                    border: Border.all(
-                        color:
-                        const Color(0xFF1F2937)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Tu código de conductor',
-                        style: TextStyle(
-                            color: Color(0xFF6B7280),
-                            fontSize: 13),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        codigo,
-                        style: const TextStyle(
-                          color: Color(0xFF1E6BFF),
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 4,
+              return SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 28, vertical: 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Bienvenida
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFF1E6BFF),
+                            Color(0xFF0A4BCC),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Guarda este código para iniciar sesión.',
-                        style: TextStyle(
-                            color: Color(0xFF4B5563),
-                            fontSize: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.drive_eta_rounded,
+                              color: Colors.white, size: 40),
+                          const SizedBox(height: 12),
+                          Text(
+                            '¡Bienvenido, $nombre!',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Panel del conductor',
+                            style: TextStyle(
+                                color: Color(0xFFBFD7FF), fontSize: 14),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
+                    ),
+                    const SizedBox(height: 24),
 
-                // Info personal
-                _infoCard(
-                  titulo: 'Datos personales',
-                  items: [
-                    _InfoItem(
-                        Icons.person_outline,
-                        'Nombre',
-                        '$nombre $apellido'),
-                    _InfoItem(Icons.badge_outlined,
-                        'DNI', data['dni'] ?? '-'),
-                    _InfoItem(Icons.phone_outlined,
-                        'Celular',
-                        data['celular'] ?? '-'),
-                    _InfoItem(
-                        Icons.card_membership_outlined,
-                        'Licencia',
-                        data['numeroLicencia'] ?? '-'),
+                    // ── VIAJE ACTIVO o BOTÓN INICIAR ─────────────────
+                    tieneViajeActivo
+                        ? _viajeActivoBanner(viajeDoc!, data)
+                        : _botonIniciarViaje(data),
+
+                    const SizedBox(height: 16),
+
+                    // Código de conductor
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF111827),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                            color: const Color(0xFF1F2937)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Tu código de conductor',
+                            style: TextStyle(
+                                color: Color(0xFF6B7280), fontSize: 13),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            codigo,
+                            style: const TextStyle(
+                              color: Color(0xFF1E6BFF),
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 4,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Guarda este código para iniciar sesión.',
+                            style: TextStyle(
+                                color: Color(0xFF4B5563), fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Info personal
+                    _infoCard(
+                      titulo: 'Datos personales',
+                      items: [
+                        _InfoItem(Icons.person_outline, 'Nombre',
+                            '$nombre $apellido'),
+                        _InfoItem(Icons.badge_outlined, 'DNI',
+                            data['dni'] ?? '-'),
+                        _InfoItem(Icons.phone_outlined, 'Celular',
+                            data['celular'] ?? '-'),
+                        _InfoItem(Icons.card_membership_outlined,
+                            'Licencia',
+                            data['numeroLicencia'] ?? '-'),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Info vehículo
+                    _infoCard(
+                      titulo: 'Mi vehículo',
+                      items: [
+                        _InfoItem(Icons.directions_car_outlined, 'Placa',
+                            vehiculo['placa'] ?? '-'),
+                        _InfoItem(Icons.directions_car_outlined,
+                            'Vehículo',
+                            '${vehiculo['marca'] ?? ''} ${vehiculo['modelo'] ?? ''}'),
+                        _InfoItem(Icons.color_lens_outlined, 'Color',
+                            vehiculo['color'] ?? '-'),
+                        _InfoItem(Icons.people_outline, 'Capacidad',
+                            '${vehiculo['capacidad'] ?? '-'} pasajeros'),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
                   ],
                 ),
-                const SizedBox(height: 16),
-
-                // Info vehículo
-                _infoCard(
-                  titulo: 'Mi vehículo',
-                  items: [
-                    _InfoItem(
-                        Icons.directions_car_outlined,
-                        'Placa',
-                        vehiculo['placa'] ?? '-'),
-                    _InfoItem(
-                        Icons.directions_car_outlined,
-                        'Vehículo',
-                        '${vehiculo['marca'] ?? ''} ${vehiculo['modelo'] ?? ''}'),
-                    _InfoItem(
-                        Icons.color_lens_outlined,
-                        'Color',
-                        vehiculo['color'] ?? '-'),
-                    _InfoItem(
-                        Icons.people_outline,
-                        'Capacidad',
-                        '${vehiculo['capacidad'] ?? '-'} pasajeros'),
-                  ],
-                ),
-                const SizedBox(height: 32),
-
-                // Placeholder panel
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111827),
-                    borderRadius:
-                    BorderRadius.circular(16),
-                    border: Border.all(
-                        color:
-                        const Color(0xFF1F2937)),
-                  ),
-                  child: const Column(
-                    children: [
-                      Icon(Icons.construction_rounded,
-                          color: Color(0xFF6B7280),
-                          size: 40),
-                      SizedBox(height: 12),
-                      Text(
-                        'Módulo de viajes próximamente',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight:
-                            FontWeight.w600),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Aquí irán las funciones de gestión de viajes.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: Color(0xFF6B7280),
-                            fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           );
         },
       ),
     );
   }
 
+  Widget _botonIniciarViaje(Map<String, dynamic> conductorData) {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ElevatedButton.icon(
+        onPressed: _iniciando
+            ? null
+            : () => _mostrarDialogoIniciarViaje(conductorData),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF10B981),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16)),
+          elevation: 0,
+        ),
+        icon: _iniciando
+            ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+                color: Colors.white, strokeWidth: 2.5))
+            : const Icon(Icons.play_circle_outline_rounded, size: 24),
+        label: Text(
+          _iniciando ? 'Iniciando...' : 'Iniciar nuevo viaje',
+          style: const TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
+  Widget _viajeActivoBanner(
+      DocumentSnapshot viajeDoc, Map<String, dynamic> conductorData) {
+    final viaje = viajeDoc.data() as Map<String, dynamic>;
+    final rutaLabel = viaje['rutaLabel'] ?? '';
+    final asientosOcupados = viaje['asientosOcupados'] ?? 0;
+    final capacidad = viaje['capacidad'] ?? 4;
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DriverTripView(
+            viajeId: viajeDoc.id,
+            conductorData: conductorData,
+          ),
+        ),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF10B981).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.directions_car_rounded,
+                  color: Color(0xFF10B981), size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Viaje en curso',
+                      style: TextStyle(
+                          color: Color(0xFF10B981),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(rutaLabel,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700)),
+                  Text('$asientosOcupados/$capacidad asientos',
+                      style: const TextStyle(
+                          color: Color(0xFF6B7280), fontSize: 12)),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded,
+                color: Color(0xFF10B981), size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _rutaOption({
+    required BuildContext ctx,
+    required String ruta,
+    required String label,
+    required IconData icon,
+    required String? seleccionada,
+    required VoidCallback onTap,
+  }) {
+    final selected = seleccionada == ruta;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF1E6BFF).withOpacity(0.15)
+              : const Color(0xFF1F2937).withOpacity(0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFF1E6BFF)
+                : const Color(0xFF1F2937),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon,
+                color: selected
+                    ? const Color(0xFF1E6BFF)
+                    : const Color(0xFF6B7280),
+                size: 20),
+            const SizedBox(width: 10),
+            Text(label,
+                style: TextStyle(
+                    color: selected ? Colors.white : const Color(0xFF6B7280),
+                    fontSize: 15,
+                    fontWeight: selected
+                        ? FontWeight.w600
+                        : FontWeight.normal)),
+            const Spacer(),
+            if (selected)
+              const Icon(Icons.check_circle_rounded,
+                  color: Color(0xFF1E6BFF), size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _infoCard(
-      {required String titulo,
-        required List<_InfoItem> items}) {
+      {required String titulo, required List<_InfoItem> items}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -316,13 +530,11 @@ class DriverHomeView extends StatelessWidget {
             child: Row(
               children: [
                 Icon(item.icon,
-                    color: const Color(0xFF6B7280),
-                    size: 16),
+                    color: const Color(0xFF6B7280), size: 16),
                 const SizedBox(width: 10),
                 Text('${item.label}: ',
                     style: const TextStyle(
-                        color: Color(0xFF6B7280),
-                        fontSize: 13)),
+                        color: Color(0xFF6B7280), fontSize: 13)),
                 Expanded(
                   child: Text(item.value,
                       style: const TextStyle(

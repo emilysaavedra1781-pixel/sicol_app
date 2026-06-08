@@ -10,20 +10,23 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # Firebase
   firebase_core: ^4.6.0
   firebase_auth: ^6.3.0
   cloud_firestore: ^6.2.0
-  # firebase_app_check: ^0.4.4+2  # ← cambia a esta versión
-
   cupertino_icons: ^1.0.8
-
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/

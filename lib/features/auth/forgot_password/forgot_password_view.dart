@@ -40,12 +40,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     _celularCtrl.dispose();
     _passCtrl.dispose();
     _pass2Ctrl.dispose();
-    for (final c in _otpControllers) {
-      c.dispose();
-    }
-    for (final f in _otpFocusNodes) {
-      f.dispose();
-    }
+    for (final c in _otpControllers) c.dispose();
+    for (final f in _otpFocusNodes) f.dispose();
     super.dispose();
   }
 
@@ -58,7 +54,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     });
 
     final celular = _celularCtrl.text.trim();
-
     final existe = await _authService.isCelularRegistered(celular);
     if (!mounted) return;
 
@@ -70,30 +65,12 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       return;
     }
 
-    await _authService.sendOTP(
-      phoneNumber: '+51$celular',
-      verificationCompleted: (_) {},
-      verificationFailed: (e) {
-        if (mounted) {
-          setState(() {
-            _loading = false;
-            _errorMessage = 'Error al enviar OTP. Intenta nuevamente.';
-          });
-        }
-      },
-      codeSent: (vId, _) {
-        if (mounted) {
-          setState(() {
-            _loading = false;
-            _verificationId = vId;
-            _paso = 'otp';
-          });
-        }
-      },
-      codeAutoRetrievalTimeout: (vId) {
-        _verificationId = vId;
-      },
-    );
+    // MODO PRUEBA: saltar envío de OTP, ir directo a pantalla OTP
+    setState(() {
+      _loading = false;
+      _verificationId = 'test-verification-id';
+      _paso = 'otp';
+    });
   }
 
   Future<void> _verificarOtp() async {
@@ -119,20 +96,15 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         _loading = false;
         _paso = 'password';
       });
-
-
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       _intentosOtp++;
       setState(() {
         _loading = false;
-        for (final c in _otpControllers) {
-          c.clear();
-        }
+        for (final c in _otpControllers) c.clear();
         _otpFocusNodes[0].requestFocus();
         if (_intentosOtp >= maxIntentos) {
-          _errorMessage =
-          'OTP incorrecto. Agotaste los intentos. Vuelve atrás.';
+          _errorMessage = 'OTP incorrecto. Agotaste los intentos. Vuelve atrás.';
         } else {
           _errorMessage =
           'OTP incorrecto (${e.code}). Te quedan ${maxIntentos - _intentosOtp} intento(s).';
@@ -159,9 +131,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       await user!.updatePassword(_passCtrl.text);
-
-      await _authService.desbloquearCuentaPorCelular(
-          _celularCtrl.text.trim());
+      await _authService.desbloquearCuentaPorCelular(_celularCtrl.text.trim());
 
       if (!mounted) return;
       setState(() {
@@ -205,19 +175,16 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
             }
           },
         ),
-        title: const Text(
-          'Recuperar contraseña',
-          style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w600),
-        ),
+        title: const Text('Recuperar contraseña',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600)),
       )
           : null,
       body: SafeArea(
         child: Padding(
-          padding:
-          const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
           child: () {
             switch (_paso) {
               case 'celular':
@@ -282,7 +249,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
           ),
           const SizedBox(height: 32),
           _botonPrincipal(
-            texto: 'Enviar código OTP',
+            texto: 'Continuar',
             onPressed: _loading ? null : _enviarOtp,
             loading: _loading,
           ),
@@ -296,9 +263,11 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Ingresa el código enviado a tu celular.',
-            style: TextStyle(
-                color: Color(0xFF6B7280), fontSize: 14, height: 1.5)),
+        const Text(
+          'Ingresa el código de verificación.\nUsa el código: 123456',
+          style: TextStyle(
+              color: Color(0xFF6B7280), fontSize: 14, height: 1.5),
+        ),
         const SizedBox(height: 32),
         if (_errorMessage != null) ...[
           _errorBanner(_errorMessage!),
@@ -317,9 +286,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
                 keyboardType: TextInputType.number,
                 maxLength: 1,
                 enabled: !agotado && !_loading,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly
-                ],
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -330,18 +297,16 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
                   fillColor: const Color(0xFF111827),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                    const BorderSide(color: Color(0xFF1F2937)),
+                    borderSide: const BorderSide(color: Color(0xFF1F2937)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                    const BorderSide(color: Color(0xFF1F2937)),
+                    borderSide: const BorderSide(color: Color(0xFF1F2937)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                        color: Color(0xFF1E6BFF), width: 2),
+                    borderSide:
+                    const BorderSide(color: Color(0xFF1E6BFF), width: 2),
                   ),
                 ),
                 onChanged: (v) => _onOtpChanged(i, v),
@@ -402,8 +367,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
                 color: const Color(0xFF6B7280),
                 size: 20,
               ),
-              onPressed: () =>
-                  setState(() => _obscurePass = !_obscurePass),
+              onPressed: () => setState(() => _obscurePass = !_obscurePass),
             ),
           ),
         ),

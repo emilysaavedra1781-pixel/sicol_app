@@ -16,7 +16,14 @@ class AuthService {
     required Function(String, int?) codeSent,
     required Function(String) codeAutoRetrievalTimeout,
   }) async {
-    await _auth.verifyPhoneNumber(
+
+await _auth.setSettings(
+appVerificationDisabledForTesting: true,
+  forceRecaptchaFlow: false,
+);
+
+await _auth.verifyPhoneNumber(
+
       phoneNumber: phoneNumber,
       verificationCompleted: verificationCompleted,
       verificationFailed: verificationFailed,
