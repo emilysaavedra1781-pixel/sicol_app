@@ -5,7 +5,9 @@ import '../../../services/auth_service.dart';
 import 'otp_verification_view.dart';
 
 class RegisterView extends StatefulWidget {
-  const RegisterView({super.key});
+  final String rolInicial;
+
+  const RegisterView({super.key, this.rolInicial = 'pasajero'});
 
   @override
   State<RegisterView> createState() => _RegisterViewState();
@@ -15,6 +17,9 @@ class _RegisterViewState extends State<RegisterView> {
   final _formKey = GlobalKey<FormState>();
   final _authService = AuthService();
 
+  late String _rolSeleccionado;
+
+  // Datos personales
   final _dniCtrl = TextEditingController();
   final _nombreCtrl = TextEditingController();
   final _apellidoCtrl = TextEditingController();
@@ -22,10 +27,24 @@ class _RegisterViewState extends State<RegisterView> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _fechaCtrl = TextEditingController();
+  final _licenciaCtrl = TextEditingController();
+
+  // Datos vehículo (conductor)
+  final _placaCtrl = TextEditingController();
+  final _capacidadCtrl = TextEditingController();
+  final _modeloCtrl = TextEditingController();
+  final _marcaCtrl = TextEditingController();
+  final _colorCtrl = TextEditingController();
 
   bool _loading = false;
   bool _obscurePass = true;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _rolSeleccionado = widget.rolInicial;
+  }
 
   @override
   void dispose() {
@@ -36,6 +55,12 @@ class _RegisterViewState extends State<RegisterView> {
     _emailCtrl.dispose();
     _passCtrl.dispose();
     _fechaCtrl.dispose();
+    _licenciaCtrl.dispose();
+    _placaCtrl.dispose();
+    _capacidadCtrl.dispose();
+    _modeloCtrl.dispose();
+    _marcaCtrl.dispose();
+    _colorCtrl.dispose();
     super.dispose();
   }
 
@@ -44,7 +69,8 @@ class _RegisterViewState extends State<RegisterView> {
       context: context,
       initialDate: DateTime(2000),
       firstDate: DateTime(1950),
-      lastDate: DateTime.now().subtract(const Duration(days: 365 * 18)),
+      lastDate:
+      DateTime.now().subtract(const Duration(days: 365 * 18)),
       builder: (context, child) => Theme(
         data: ThemeData.dark().copyWith(
           colorScheme: const ColorScheme.dark(
@@ -69,13 +95,11 @@ class _RegisterViewState extends State<RegisterView> {
       _errorMessage = null;
     });
 
-    // Limpiar número por si acaso tiene espacios o guiones
     final celular = _celularCtrl.text
         .trim()
         .replaceAll(' ', '')
         .replaceAll('-', '');
 
-    // Validación extra del número
     if (celular.length != 9 || !celular.startsWith('9')) {
       setState(() {
         _loading = false;
@@ -85,20 +109,44 @@ class _RegisterViewState extends State<RegisterView> {
       return;
     }
 
-    // EA02: Verificar si el celular ya está registrado
-    final yaRegistrado = await _authService.isCelularRegistered(celular);
-
+    // Verificar duplicados
+    final celularRegistrado =
+    await _authService.isCelularRegistered(celular);
     if (!mounted) return;
-
-    if (yaRegistrado) {
+    if (celularRegistrado) {
       setState(() {
         _loading = false;
-        _errorMessage = 'Ya existe una cuenta con ese número de celular.';
+        _errorMessage =
+        'Ya existe una cuenta con ese número de celular.';
       });
       return;
     }
 
-    // Enviar OTP (RF01 paso 5)
+    final dniRegistrado =
+    await _authService.isDniRegistered(_dniCtrl.text.trim());
+    if (!mounted) return;
+    if (dniRegistrado) {
+      setState(() {
+        _loading = false;
+        _errorMessage = 'Ya existe una cuenta con ese DNI.';
+      });
+      return;
+    }
+
+    // EA01 RF53: verificar placa duplicada
+    if (_rolSeleccionado == 'conductor') {
+      final placaRegistrada = await _authService
+          .isPlacaRegistered(_placaCtrl.text.trim().toUpperCase());
+      if (!mounted) return;
+      if (placaRegistrada) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'Ya existe una cuenta con esa placa.';
+        });
+        return;
+      }
+    }
+
     final phoneNumber = '+51$celular';
     String? verificationId;
 
@@ -109,8 +157,7 @@ class _RegisterViewState extends State<RegisterView> {
         if (mounted) {
           setState(() {
             _loading = false;
-            _errorMessage =
-            'Error al enviar OTP. Verifica el número de celular. (${e.code})';
+            _errorMessage = 'Error al enviar OTP. (${e.code})';
           });
         }
       },
@@ -125,6 +172,7 @@ class _RegisterViewState extends State<RegisterView> {
                 verificationId: verificationId!,
                 phoneNumber: phoneNumber,
                 userData: {
+                  'rol': _rolSeleccionado,
                   'dni': _dniCtrl.text.trim(),
                   'nombre': _nombreCtrl.text.trim(),
                   'apellido': _apellidoCtrl.text.trim(),
@@ -132,6 +180,17 @@ class _RegisterViewState extends State<RegisterView> {
                   'email': _emailCtrl.text.trim(),
                   'password': _passCtrl.text,
                   'fechaNacimiento': _fechaCtrl.text,
+                  // Solo conductor
+                  if (_rolSeleccionado == 'conductor') ...{
+                    'numeroLicencia': _licenciaCtrl.text.trim(),
+                    'placa': _placaCtrl.text
+                        .trim()
+                        .toUpperCase(),
+                    'capacidad': _capacidadCtrl.text.trim(),
+                    'modelo': _modeloCtrl.text.trim(),
+                    'marca': _marcaCtrl.text.trim(),
+                    'color': _colorCtrl.text.trim(),
+                  },
                 },
               ),
             ),
@@ -156,28 +215,24 @@ class _RegisterViewState extends State<RegisterView> {
               color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Crear cuenta',
-          style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w600),
-        ),
+        title: const Text('Crear cuenta',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding:
-          const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 28, vertical: 16),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Ingresa tus datos',
-                  style:
-                  TextStyle(color: Color(0xFF6B7280), fontSize: 14),
-                ),
+                const Text('Ingresa tus datos',
+                    style: TextStyle(
+                        color: Color(0xFF6B7280), fontSize: 14)),
                 const SizedBox(height: 24),
 
                 if (_errorMessage != null) ...[
@@ -185,7 +240,31 @@ class _RegisterViewState extends State<RegisterView> {
                   const SizedBox(height: 16),
                 ],
 
-                // DNI
+                // Selector de rol
+                _buildLabel('Tipo de cuenta'),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF111827),
+                    borderRadius: BorderRadius.circular(14),
+                    border:
+                    Border.all(color: const Color(0xFF1F2937)),
+                  ),
+                  child: Row(
+                    children: [
+                      _rolButton('pasajero', 'Pasajero',
+                          Icons.person_outline),
+                      _rolButton('conductor', 'Conductor',
+                          Icons.drive_eta_outlined),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // ── Datos personales ──────────────────────────────
+                _seccionTitulo('Datos personales'),
+                const SizedBox(height: 16),
+
                 _buildLabel('DNI / Pasaporte / Carnet'),
                 const SizedBox(height: 8),
                 _buildField(
@@ -207,7 +286,8 @@ class _RegisterViewState extends State<RegisterView> {
                   children: [
                     Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
                         children: [
                           _buildLabel('Nombre'),
                           const SizedBox(height: 8),
@@ -215,7 +295,8 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _nombreCtrl,
                             hint: 'Juan',
                             icon: Icons.person_outline,
-                            validator: (v) => v == null || v.isEmpty
+                            validator: (v) =>
+                            v == null || v.isEmpty
                                 ? 'Requerido'
                                 : null,
                           ),
@@ -225,7 +306,8 @@ class _RegisterViewState extends State<RegisterView> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
                         children: [
                           _buildLabel('Apellido'),
                           const SizedBox(height: 8),
@@ -233,7 +315,8 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _apellidoCtrl,
                             hint: 'Pérez',
                             icon: Icons.person_outline,
-                            validator: (v) => v == null || v.isEmpty
+                            validator: (v) =>
+                            v == null || v.isEmpty
                                 ? 'Requerido'
                                 : null,
                           ),
@@ -244,13 +327,13 @@ class _RegisterViewState extends State<RegisterView> {
                 ),
                 const SizedBox(height: 16),
 
-                // Celular — campo especial con filtro estricto
                 _buildLabel('Número de celular'),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _celularCtrl,
                   keyboardType: TextInputType.number,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 15),
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(9),
@@ -258,18 +341,21 @@ class _RegisterViewState extends State<RegisterView> {
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
                     if (v.length != 9) return '9 dígitos exactos';
-                    if (!v.startsWith('9')) return 'Debe empezar con 9';
+                    if (!v.startsWith('9'))
+                      return 'Debe empezar con 9';
                     return null;
                   },
                   decoration: InputDecoration(
                     hintText: '9XXXXXXXX',
-                    hintStyle:
-                    const TextStyle(color: Color(0xFF4B5563)),
+                    hintStyle: const TextStyle(
+                        color: Color(0xFF4B5563)),
                     prefixIcon: const Padding(
-                      padding: EdgeInsets.only(left: 12, right: 4),
+                      padding:
+                      EdgeInsets.only(left: 12, right: 4),
                       child: Text('+51 ',
                           style: TextStyle(
-                              color: Color(0xFF6B7280), fontSize: 14)),
+                              color: Color(0xFF6B7280),
+                              fontSize: 14)),
                     ),
                     prefixIconConstraints: const BoxConstraints(
                         minWidth: 0, minHeight: 0),
@@ -277,13 +363,13 @@ class _RegisterViewState extends State<RegisterView> {
                     fillColor: const Color(0xFF111827),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide:
-                      const BorderSide(color: Color(0xFF1F2937)),
+                      borderSide: const BorderSide(
+                          color: Color(0xFF1F2937)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide:
-                      const BorderSide(color: Color(0xFF1F2937)),
+                      borderSide: const BorderSide(
+                          color: Color(0xFF1F2937)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
@@ -292,8 +378,8 @@ class _RegisterViewState extends State<RegisterView> {
                     ),
                     errorBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide:
-                      const BorderSide(color: Color(0xFFFF3B30)),
+                      borderSide: const BorderSide(
+                          color: Color(0xFFFF3B30)),
                     ),
                     focusedErrorBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
@@ -308,7 +394,6 @@ class _RegisterViewState extends State<RegisterView> {
                 ),
                 const SizedBox(height: 16),
 
-                // Email
                 _buildLabel('Correo electrónico'),
                 const SizedBox(height: 8),
                 _buildField(
@@ -324,7 +409,6 @@ class _RegisterViewState extends State<RegisterView> {
                 ),
                 const SizedBox(height: 16),
 
-                // Fecha de nacimiento
                 _buildLabel('Fecha de nacimiento'),
                 const SizedBox(height: 8),
                 GestureDetector(
@@ -342,7 +426,21 @@ class _RegisterViewState extends State<RegisterView> {
                 ),
                 const SizedBox(height: 16),
 
-                // Contraseña
+                // Número de licencia (solo conductor)
+                if (_rolSeleccionado == 'conductor') ...[
+                  _buildLabel('Número de licencia'),
+                  const SizedBox(height: 8),
+                  _buildField(
+                    controller: _licenciaCtrl,
+                    hint: 'Q12345678',
+                    icon: Icons.card_membership_outlined,
+                    validator: (v) => v == null || v.isEmpty
+                        ? 'Requerido'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
                 _buildLabel('Contraseña'),
                 const SizedBox(height: 8),
                 _buildField(
@@ -358,8 +456,8 @@ class _RegisterViewState extends State<RegisterView> {
                       color: const Color(0xFF6B7280),
                       size: 20,
                     ),
-                    onPressed: () =>
-                        setState(() => _obscurePass = !_obscurePass),
+                    onPressed: () => setState(
+                            () => _obscurePass = !_obscurePass),
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
@@ -367,6 +465,122 @@ class _RegisterViewState extends State<RegisterView> {
                     return null;
                   },
                 ),
+
+                // ── Datos del vehículo (solo conductor) ───────────
+                if (_rolSeleccionado == 'conductor') ...[
+                  const SizedBox(height: 24),
+                  _seccionTitulo('Datos del vehículo'),
+                  const SizedBox(height: 16),
+
+                  _buildLabel('Placa'),
+                  const SizedBox(height: 8),
+                  _buildField(
+                    controller: _placaCtrl,
+                    hint: 'ABC-123',
+                    icon: Icons.directions_car_outlined,
+                    textCapitalization:
+                    TextCapitalization.characters,
+                    validator: (v) => v == null || v.isEmpty
+                        ? 'Requerido'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                          children: [
+                            _buildLabel('Marca'),
+                            const SizedBox(height: 8),
+                            _buildField(
+                              controller: _marcaCtrl,
+                              hint: 'Toyota',
+                              icon: Icons.directions_car_outlined,
+                              validator: (v) =>
+                              v == null || v.isEmpty
+                                  ? 'Requerido'
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                          children: [
+                            _buildLabel('Modelo'),
+                            const SizedBox(height: 8),
+                            _buildField(
+                              controller: _modeloCtrl,
+                              hint: 'Corolla',
+                              icon: Icons.directions_car_outlined,
+                              validator: (v) =>
+                              v == null || v.isEmpty
+                                  ? 'Requerido'
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                          children: [
+                            _buildLabel('Color'),
+                            const SizedBox(height: 8),
+                            _buildField(
+                              controller: _colorCtrl,
+                              hint: 'Blanco',
+                              icon: Icons.color_lens_outlined,
+                              validator: (v) =>
+                              v == null || v.isEmpty
+                                  ? 'Requerido'
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                          children: [
+                            _buildLabel('Capacidad'),
+                            const SizedBox(height: 8),
+                            _buildField(
+                              controller: _capacidadCtrl,
+                              hint: '4',
+                              icon: Icons.people_outline,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter
+                                    .digitsOnly,
+                              ],
+                              validator: (v) =>
+                              v == null || v.isEmpty
+                                  ? 'Requerido'
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+
                 const SizedBox(height: 32),
 
                 SizedBox(
@@ -378,28 +592,81 @@ class _RegisterViewState extends State<RegisterView> {
                       backgroundColor: const Color(0xFF1E6BFF),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                          borderRadius: BorderRadius.circular(14)),
                       elevation: 0,
                     ),
                     child: _loading
                         ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2.5),
-                    )
-                        : const Text(
-                      'Continuar y verificar',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600),
-                    ),
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5))
+                        : const Text('Continuar y verificar',
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600)),
                   ),
                 ),
                 const SizedBox(height: 24),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _seccionTitulo(String texto) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(
+        horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: const Color(0xFF1E6BFF).withOpacity(0.12),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(
+          color: const Color(0xFF1E6BFF).withOpacity(0.3)),
+    ),
+    child: Text(texto,
+        style: const TextStyle(
+            color: Color(0xFF1E6BFF),
+            fontSize: 13,
+            fontWeight: FontWeight.w600)),
+  );
+
+  Widget _rolButton(String rol, String label, IconData icon) {
+    final selected = _rolSeleccionado == rol;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() {
+          _rolSeleccionado = rol;
+          _errorMessage = null;
+        }),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFF1E6BFF)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon,
+                  color: selected
+                      ? Colors.white
+                      : const Color(0xFF6B7280),
+                  size: 18),
+              const SizedBox(width: 6),
+              Text(label,
+                  style: TextStyle(
+                      color: selected
+                          ? Colors.white
+                          : const Color(0xFF6B7280),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500)),
+            ],
           ),
         ),
       ),
@@ -428,14 +695,11 @@ class _RegisterViewState extends State<RegisterView> {
     ),
   );
 
-  Widget _buildLabel(String text) => Text(
-    text,
-    style: const TextStyle(
-      color: Color(0xFFD1D5DB),
-      fontSize: 13,
-      fontWeight: FontWeight.w500,
-    ),
-  );
+  Widget _buildLabel(String text) => Text(text,
+      style: const TextStyle(
+          color: Color(0xFFD1D5DB),
+          fontSize: 13,
+          fontWeight: FontWeight.w500));
 
   Widget _buildField({
     required TextEditingController controller,
@@ -446,6 +710,8 @@ class _RegisterViewState extends State<RegisterView> {
     Widget? suffixIcon,
     Widget? prefix,
     List<TextInputFormatter>? inputFormatters,
+    TextCapitalization textCapitalization =
+        TextCapitalization.none,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
@@ -453,42 +719,46 @@ class _RegisterViewState extends State<RegisterView> {
       keyboardType: keyboardType,
       obscureText: obscure,
       inputFormatters: inputFormatters,
+      textCapitalization: textCapitalization,
       style: const TextStyle(color: Colors.white, fontSize: 15),
       validator: validator,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Color(0xFF4B5563)),
-        prefixIcon:
-        prefix ?? Icon(icon, color: const Color(0xFF6B7280), size: 20),
+        prefixIcon: prefix ??
+            Icon(icon, color: const Color(0xFF6B7280), size: 20),
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: const Color(0xFF111827),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF1F2937)),
+          borderSide:
+          const BorderSide(color: Color(0xFF1F2937)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF1F2937)),
+          borderSide:
+          const BorderSide(color: Color(0xFF1F2937)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
+          borderSide: const BorderSide(
+              color: Color(0xFF1E6BFF), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFFF3B30)),
+          borderSide:
+          const BorderSide(color: Color(0xFFFF3B30)),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
+          borderSide: const BorderSide(
+              color: Color(0xFFFF3B30), width: 1.5),
         ),
-        errorStyle:
-        const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        errorStyle: const TextStyle(
+            color: Color(0xFFFF3B30), fontSize: 12),
+        contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16, vertical: 16),
       ),
     );
   }

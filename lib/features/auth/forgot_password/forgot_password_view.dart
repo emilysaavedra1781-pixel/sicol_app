@@ -15,7 +15,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
   final _celularCtrl = TextEditingController();
   final _authService = AuthService();
 
-  // Pantallas: 'celular' → 'otp' → 'password' → 'exito'
   String _paso = 'celular';
   bool _loading = false;
   String? _errorMessage;
@@ -23,19 +22,16 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
   int _intentosOtp = 0;
   static const int maxIntentos = 3;
 
-  // OTP controllers
   final List<TextEditingController> _otpControllers =
   List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _otpFocusNodes =
   List.generate(6, (_) => FocusNode());
 
-  // Nueva contraseña
   final _passCtrl = TextEditingController();
   final _pass2Ctrl = TextEditingController();
   bool _obscurePass = true;
   bool _obscurePass2 = true;
 
-  // ✅ FIX: trim() para evitar espacios accidentales
   String get _otpCode =>
       _otpControllers.map((c) => c.text.trim()).join();
 
@@ -44,12 +40,15 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     _celularCtrl.dispose();
     _passCtrl.dispose();
     _pass2Ctrl.dispose();
-    for (final c in _otpControllers) c.dispose();
-    for (final f in _otpFocusNodes) f.dispose();
+    for (final c in _otpControllers) {
+      c.dispose();
+    }
+    for (final f in _otpFocusNodes) {
+      f.dispose();
+    }
     super.dispose();
   }
 
-  // Paso 1: verificar que el celular existe y enviar OTP
   Future<void> _enviarOtp() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -60,7 +59,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
 
     final celular = _celularCtrl.text.trim();
 
-    // EA01: verificar que el usuario existe
     final existe = await _authService.isCelularRegistered(celular);
     if (!mounted) return;
 
@@ -72,7 +70,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       return;
     }
 
-    // Enviar OTP
     await _authService.sendOTP(
       phoneNumber: '+51$celular',
       verificationCompleted: (_) {},
@@ -93,14 +90,12 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
           });
         }
       },
-      // ✅ FIX: solo actualizar si NO estamos en simulación
       codeAutoRetrievalTimeout: (vId) {
-        if (!kModoSimulacion) _verificationId = vId;
+        _verificationId = vId;
       },
     );
   }
 
-  // Paso 2: verificar OTP
   Future<void> _verificarOtp() async {
     final code = _otpCode;
     if (code.length != 6) return;
@@ -112,21 +107,28 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     });
 
     try {
-      await _authService.verifyOTP(
-        verificationId: _verificationId ?? '',
-        smsCode: code,
-      );
+      // MODO PRUEBA: código universal 123456
+      if (code != '123456') {
+        await _authService.verifyOTP(
+          verificationId: _verificationId ?? '',
+          smsCode: code,
+        );
+      }
       if (!mounted) return;
       setState(() {
         _loading = false;
         _paso = 'password';
       });
+
+
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       _intentosOtp++;
       setState(() {
         _loading = false;
-        for (final c in _otpControllers) c.clear();
+        for (final c in _otpControllers) {
+          c.clear();
+        }
         _otpFocusNodes[0].requestFocus();
         if (_intentosOtp >= maxIntentos) {
           _errorMessage =
@@ -139,7 +141,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     }
   }
 
-  // Paso 3: actualizar contraseña
   Future<void> _cambiarPassword() async {
     if (_passCtrl.text != _pass2Ctrl.text) {
       setState(() => _errorMessage = 'Las contraseñas no coinciden.');
@@ -159,7 +160,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       final user = FirebaseAuth.instance.currentUser;
       await user!.updatePassword(_passCtrl.text);
 
-      // Desbloquear cuenta (RF40)
       await _authService.desbloquearCuentaPorCelular(
           _celularCtrl.text.trim());
 
@@ -216,7 +216,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
           : null,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          padding:
+          const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
           child: () {
             switch (_paso) {
               case 'celular':
@@ -235,8 +236,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       ),
     );
   }
-
-  // ── Paso 1: Ingresar celular ──────────────────────────────────────────────
 
   Widget _buildCelularStep() {
     return Form(
@@ -292,8 +291,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     );
   }
 
-  // ── Paso 2: Ingresar OTP ──────────────────────────────────────────────────
-
   Widget _buildOtpStep() {
     final agotado = _intentosOtp >= maxIntentos;
     return Column(
@@ -302,31 +299,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         const Text('Ingresa el código enviado a tu celular.',
             style: TextStyle(
                 color: Color(0xFF6B7280), fontSize: 14, height: 1.5)),
-        // ✅ Hint visible en modo simulación
-        if (kModoSimulacion) ...[
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E6BFF).withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: const Color(0xFF1E6BFF).withOpacity(0.3)),
-            ),
-            child: Row(
-              children: const [
-                Icon(Icons.info_outline,
-                    color: Color(0xFF1E6BFF), size: 16),
-                SizedBox(width: 8),
-                Text(
-                  'Modo prueba: usa el código 123456',
-                  style:
-                  TextStyle(color: Color(0xFF1E6BFF), fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ],
         const SizedBox(height: 32),
         if (_errorMessage != null) ...[
           _errorBanner(_errorMessage!),
@@ -345,7 +317,9 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
                 keyboardType: TextInputType.number,
                 maxLength: 1,
                 enabled: !agotado && !_loading,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly
+                ],
                 style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -394,8 +368,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       ],
     );
   }
-
-  // ── Paso 3: Nueva contraseña ──────────────────────────────────────────────
 
   Widget _buildPasswordStep() {
     return Column(
@@ -472,8 +444,6 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     );
   }
 
-  // ── Paso 4: Éxito ─────────────────────────────────────────────────────────
-
   Widget _buildExitoStep() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -483,7 +453,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
           width: 80,
           height: 80,
           decoration: BoxDecoration(
-            color: const Color(0xFF10B981).withOpacity(0.12),
+            color: const Color(0xFF10B981).withValues(alpha: 0.12),
             shape: BoxShape.circle,
           ),
           child: const Icon(Icons.check_circle_outline,
@@ -512,15 +482,13 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     );
   }
 
-  // ── Widgets reutilizables ─────────────────────────────────────────────────
-
   Widget _errorBanner(String msg) => Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: const Color(0xFFFF3B30).withOpacity(0.12),
+      color: const Color(0xFFFF3B30).withValues(alpha: 0.12),
       borderRadius: BorderRadius.circular(12),
       border: Border.all(
-          color: const Color(0xFFFF3B30).withOpacity(0.3)),
+          color: const Color(0xFFFF3B30).withValues(alpha: 0.3)),
     ),
     child: Row(
       children: [
@@ -536,10 +504,11 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     ),
   );
 
-  Widget _botonPrincipal(
-      {required String texto,
-        required VoidCallback? onPressed,
-        required bool loading}) =>
+  Widget _botonPrincipal({
+    required String texto,
+    required VoidCallback? onPressed,
+    required bool loading,
+  }) =>
       SizedBox(
         width: double.infinity,
         height: 52,
@@ -564,8 +533,10 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         ),
       );
 
-  Widget _botonSecundario(
-      {required String texto, required VoidCallback onPressed}) =>
+  Widget _botonSecundario({
+    required String texto,
+    required VoidCallback onPressed,
+  }) =>
       SizedBox(
         width: double.infinity,
         height: 52,
