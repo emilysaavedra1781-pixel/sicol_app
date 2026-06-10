@@ -7,13 +7,13 @@ class TripService {
 
   String get _uid => _auth.currentUser!.uid;
 
-  // ─── Verificar si tiene viaje activo (RF33) ───────────────────────────────
+  // ─── Verificar si tiene viaje activo ─────────────────────────────────────
 
   Future<DocumentSnapshot?> getViajeActivo() async {
     final query = await _db
         .collection('viajes')
         .where('conductorUid', isEqualTo: _uid)
-        .where('estado', isEqualTo: 'activo')
+        .where('estado', whereIn: ['activo', 'en_camino'])
         .limit(1)
         .get();
     if (query.docs.isEmpty) return null;
@@ -24,58 +24,85 @@ class TripService {
     return _db
         .collection('viajes')
         .where('conductorUid', isEqualTo: _uid)
-        .where('estado', isEqualTo: 'activo')
+        .where('estado', whereIn: ['activo', 'en_camino'])
         .limit(1)
         .snapshots();
   }
 
-  // ─── Iniciar viaje (RF34) ─────────────────────────────────────────────────
+  // ─── Iniciar viaje (sin ruta — la define el primer pasajero) ─────────────
 
   Future<String> iniciarViaje({
-    required String ruta, // 'chosica_lima' o 'lima_chosica'
     required Map<String, dynamic> conductorData,
   }) async {
-    // Verificar que no haya viaje activo
     final activo = await getViajeActivo();
     if (activo != null) {
-      throw Exception('Ya tienes un viaje activo. Ciérralo antes de iniciar uno nuevo.');
+      throw Exception(
+          'Ya tienes un viaje activo. Ciérralo antes de iniciar uno nuevo.');
     }
 
-    final vehiculo = conductorData['vehiculo'] as Map<String, dynamic>? ?? {};
-    final capacidad = int.tryParse(vehiculo['capacidad']?.toString() ?? '4') ?? 4;
+    final vehiculo =
+        conductorData['vehiculo'] as Map<String, dynamic>? ?? {};
+    final capacidad =
+        int.tryParse(vehiculo['capacidad']?.toString() ?? '4') ?? 4;
 
-    // Crear asientos según capacidad
     final asientos = <String, dynamic>{};
     for (int i = 1; i <= capacidad; i++) {
       asientos['asiento_$i'] = {
         'numero': i,
-        'estado': 'libre', // libre, bloqueado, ocupado
+        'estado': 'libre',
         'pasajero': null,
       };
     }
 
-    final rutaLabel = ruta == 'chosica_lima' ? 'Chosica → Lima' : 'Lima → Chosica';
-
+    // ✅ Sin ruta — la asigna el primer pasajero que reserve
     final docRef = await _db.collection('viajes').add({
       'conductorUid': _uid,
-      'conductorNombre': '${conductorData['nombre']} ${conductorData['apellido']}',
+      'conductorNombre':
+      '${conductorData['nombre']} ${conductorData['apellido']}',
       'conductorCodigo': conductorData['codigoConductor'],
       'vehiculo': vehiculo,
-      'ruta': ruta,
-      'rutaLabel': rutaLabel,
+      'ruta': null,      // se asigna cuando reserva el primer pasajero
+      'rutaLabel': null,
       'estado': 'activo',
       'asientos': asientos,
       'capacidad': capacidad,
       'asientosOcupados': 0,
       'ingresoTotal': 0,
+      'ubicacionActual': {
+        'lat': -11.9347, // posición por defecto (Chosica)
+        'lng': -76.6952,
+        'timestamp': FieldValue.serverTimestamp(),
+      },
+      'forzadoPorAdmin': false,
       'iniciadoEn': FieldValue.serverTimestamp(),
+      'arranqueEn': null,
       'cerradoEn': null,
     });
 
     return docRef.id;
   }
 
-  // ─── Cerrar viaje (RF18) ──────────────────────────────────────────────────
+  // ─── Conductor arranca el colectivo ───────────────────────────────────────
+
+  Future<void> arrancarColectivo(String viajeId) async {
+    await _db.collection('viajes').doc(viajeId).update({
+      'estado': 'en_camino',
+      'arranqueEn': FieldValue.serverTimestamp(),
+      'forzadoPorAdmin': false,
+    });
+  }
+
+  // ─── Admin: Forzar arranque ───────────────────────────────────────────────
+
+  Future<void> forzarArranque(String viajeId) async {
+    await _db.collection('viajes').doc(viajeId).update({
+      'estado': 'en_camino',
+      'arranqueEn': FieldValue.serverTimestamp(),
+      'forzadoPorAdmin': true,
+    });
+  }
+
+  // ─── Cerrar viaje ─────────────────────────────────────────────────────────
 
   Future<void> cerrarViaje(String viajeId) async {
     await _db.collection('viajes').doc(viajeId).update({
@@ -84,13 +111,13 @@ class TripService {
     });
   }
 
-  // ─── Stream de pasajeros del viaje (RF15) ────────────────────────────────
+  // ─── Stream de un viaje específico ───────────────────────────────────────
 
   Stream<DocumentSnapshot> getViajeStream(String viajeId) {
     return _db.collection('viajes').doc(viajeId).snapshots();
   }
 
-  // ─── Historial de viajes (RF36) ───────────────────────────────────────────
+  // ─── Historial de viajes ──────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getHistorialViajes() async {
     final query = await _db

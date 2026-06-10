@@ -1,15 +1,29 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../../services/booking_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+// Mapa de labels por ruta
+const Map<String, String> _rutaLabels = {
+  'chosica_lima': 'Chosica → Lima (Carretera Central)',
+  'lima_chosica': 'Lima → Chosica (Carretera Central)',
+};
 
 class SeatSelectionView extends StatefulWidget {
   final String viajeId;
-  final Map<String, dynamic> viajeData;
+  final String? nombrePasajero;
+  final String? dniPasajero;
+  final String paradero;
+  // ✅ NUEVO: ruta seleccionada por el pasajero para asignarla al viaje si aún es null
+  final String? rutaSeleccionada;
 
   const SeatSelectionView({
     super.key,
     required this.viajeId,
-    required this.viajeData,
+    required this.paradero,
+    this.nombrePasajero,
+    this.dniPasajero,
+    this.rutaSeleccionada,
   });
 
   @override
@@ -17,543 +31,364 @@ class SeatSelectionView extends StatefulWidget {
 }
 
 class _SeatSelectionViewState extends State<SeatSelectionView> {
-  final _bookingService = BookingService();
   int? _asientoSeleccionado;
-  final _nombreCtrl = TextEditingController();
-  final _dniCtrl = TextEditingController();
-  final _paraderoCtrl = TextEditingController();
-  bool _loading = false;
-  String? _error;
+  final _db = FirebaseFirestore.instance;
+  bool _guardando = false;
 
-  @override
-  void dispose() {
-    _nombreCtrl.dispose();
-    _dniCtrl.dispose();
-    _paraderoCtrl.dispose();
-    super.dispose();
+  String _generarCodigoOTP() {
+    const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final random = Random.secure();
+    return List.generate(
+        5, (_) => caracteres[random.nextInt(caracteres.length)]).join();
   }
 
-  Future<void> _confirmarReserva() async {
-    if (_asientoSeleccionado == null) {
-      setState(() => _error = 'Selecciona un asiento.');
-      return;
-    }
-    if (_nombreCtrl.text.trim().isEmpty ||
-        _dniCtrl.text.trim().isEmpty ||
-        _paraderoCtrl.text.trim().isEmpty) {
-      setState(() => _error = 'Completa todos los campos.');
-      return;
-    }
+  Future<void> _confirmarReserva(Map<String, dynamic> viajeData) async {
+    if (_asientoSeleccionado == null || _guardando) return;
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF111827),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Confirmar pago',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.payment_rounded,
-                color: Color(0xFF1E6BFF), size: 48),
-            const SizedBox(height: 16),
-            _resumenRow('Viajero', _nombreCtrl.text.trim()),
-            _resumenRow('DNI', _dniCtrl.text.trim()),
-            _resumenRow('Paradero', _paraderoCtrl.text.trim()),
-            _resumenRow('Asiento', '$_asientoSeleccionado'),
-            _resumenRow('Ruta', widget.viajeData['rutaLabel'] ?? ''),
-            const Divider(color: Color(0xFF1F2937), height: 24),
-            const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Total a pagar',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600)),
-                Text('S/ 15.00',
-                    style: TextStyle(
-                        color: Color(0xFF1E6BFF),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.info_outline, color: Color(0xFFF59E0B), size: 16),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text('Pago simulado — modo desarrollo',
-                        style:
-                        TextStyle(color: Color(0xFFF59E0B), fontSize: 12)),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar',
-                style: TextStyle(color: Color(0xFF6B7280))),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1E6BFF),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
-            ),
-            child: const Text('Pagar S/ 15.00',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _guardando = true);
 
     try {
-      await _bookingService.reservarAsiento(
-        viajeId: widget.viajeId,
-        numeroAsiento: _asientoSeleccionado!,
-        nombreViajero: _nombreCtrl.text.trim(),
-        dniViajero: _dniCtrl.text.trim(),
-        paradero: _paraderoCtrl.text.trim(),
-      );
+      final user = FirebaseAuth.instance.currentUser;
+      final codigoUnico = _generarCodigoOTP();
+      final numeroAsiento = _asientoSeleccionado!;
+      final key = 'asiento_$numeroAsiento';
+
+      await _db.runTransaction((transaction) async {
+        final viajeRef = _db.collection('viajes').doc(widget.viajeId);
+        final viajeSnap = await transaction.get(viajeRef);
+
+        if (!viajeSnap.exists) {
+          throw Exception('El viaje ya no está disponible.');
+        }
+
+        final data = viajeSnap.data()!;
+
+        // ── Verificar asiento libre ──────────────────────────────────
+        final ocupadosLista =
+        List<int>.from(data['asientosListaOcupados'] ?? []);
+        if (ocupadosLista.contains(numeroAsiento)) {
+          throw Exception('¡El asiento $numeroAsiento acaba de ser ocupado!');
+        }
+
+        final asientosMapa =
+        Map<String, dynamic>.from(data['asientos'] ?? {});
+        final asientoActual =
+        (asientosMapa[key] as Map?)?.cast<String, dynamic>();
+        if (asientoActual != null && asientoActual['estado'] != 'libre') {
+          throw Exception(
+              '¡El asiento $numeroAsiento ya no está disponible!');
+        }
+
+        // ── Actualizar asientos ──────────────────────────────────────
+        ocupadosLista.add(numeroAsiento);
+        asientosMapa[key] = {
+          'numero': numeroAsiento,
+          'estado': 'ocupado',
+          'pasajero': {
+            'uid': user?.uid ?? '',
+            'nombre': widget.nombrePasajero ?? 'Pasajero',
+            'dni': widget.dniPasajero ?? '',
+            'paradero': widget.paradero,
+            'asiento': numeroAsiento,
+          },
+        };
+
+        // ✅ FIX PRINCIPAL: si el viaje tiene ruta null, asignarla ahora
+        // con la ruta que el pasajero seleccionó en la pantalla anterior
+        final rutaActual = data['ruta'];
+        final rutaFinal = rutaActual ?? widget.rutaSeleccionada;
+        final rutaLabelFinal = rutaActual != null
+            ? data['rutaLabel']
+            : _rutaLabels[widget.rutaSeleccionada] ??
+            widget.rutaSeleccionada;
+
+        transaction.update(viajeRef, {
+          'asientosListaOcupados': ocupadosLista,
+          'asientos': asientosMapa,
+          'asientosOcupados': ocupadosLista.length,
+          'ingresoTotal': FieldValue.increment(15),
+          // ✅ Solo sobreescribe si era null
+          if (rutaActual == null) 'ruta': rutaFinal,
+          if (rutaActual == null) 'rutaLabel': rutaLabelFinal,
+        });
+
+        // ── Crear reserva ────────────────────────────────────────────
+        final reservaRef = _db.collection('reservas').doc();
+        transaction.set(reservaRef, {
+          'creadoEn': FieldValue.serverTimestamp(),
+          'dniViajero': widget.dniPasajero ?? '',
+          'estado': 'confirmada',
+          'monto': 15,
+          'nombreViajero': widget.nombrePasajero ?? 'Pasajero',
+          'numeroAsiento': numeroAsiento,
+          'paradero': widget.paradero,
+          'pasajeroUid': user?.uid ?? '',
+          'viajeId': widget.viajeId,
+          'codigoVerificacion': codigoUnico,
+          'ruta': rutaFinal,
+        });
+      });
 
       if (!mounted) return;
-
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF111827),
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.check_circle_rounded,
-                    color: Color(0xFF10B981), size: 40),
-              ),
-              const SizedBox(height: 16),
-              const Text('¡Reserva confirmada!',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
-              Text(
-                'Asiento $_asientoSeleccionado reservado en ${widget.viajeData['rutaLabel']}',
-                textAlign: TextAlign.center,
-                style:
-                const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF10B981),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    elevation: 0,
-                  ),
-                  child: const Text('Aceptar',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      _mostrarCodigoExitoso(codigoUnico);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = e.toString().replaceAll('Exception: ', '');
-        });
-      }
+      if (mounted) _mostrarError(e.toString());
+    } finally {
+      if (mounted) setState(() => _guardando = false);
     }
-  }
-
-  Widget _resumenRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label,
-              style:
-              const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-          Text(value,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500)),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final asientos =
-        (widget.viajeData['asientos'] as Map?)?.cast<String, dynamic>() ?? {};
-    final capacidad =
-        (widget.viajeData['capacidad'] as num?)?.toInt() ?? 4;
-
-    // Cast seguro del mapa vehiculo
-    final vehiculo =
-        (widget.viajeData['vehiculo'] as Map?)?.cast<String, dynamic>() ?? {};
-    final placa = vehiculo['placa'] ?? '-';
-
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
       appBar: AppBar(
+        title: const Text('Seleccionar Asiento'),
         backgroundColor: const Color(0xFF111827),
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text('Seleccionar asiento',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600)),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Info del viaje
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF111827),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF1F2937)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.directions_car_rounded,
-                      color: Color(0xFF1E6BFF), size: 24),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.viajeData['rutaLabel'] ?? '',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          'Placa: $placa • S/ 15.00',
-                          style: const TextStyle(
-                              color: Color(0xFF6B7280), fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: _db.collection('viajes').doc(widget.viajeId).snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(
+                child:
+                CircularProgressIndicator(color: Color(0xFF1E6BFF)));
+          }
+          if (!snapshot.data!.exists) {
+            return const Center(
+                child: Text('Viaje no disponible.',
+                    style: TextStyle(color: Colors.white)));
+          }
 
-            // Gráfico asientos
-            const Text('Elige tu asiento',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+          final ocupados =
+          List<int>.from(data['asientosListaOcupados'] ?? []);
 
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF111827),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF1F2937)),
-              ),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate:
-                const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: 1,
-                ),
-                itemCount: capacidad,
-                itemBuilder: (context, index) {
-                  final num = index + 1;
-                  final key = 'asiento_$num';
-                  final asiento =
-                      (asientos[key] as Map?)?.cast<String, dynamic>() ?? {};
-                  final estado = asiento['estado'] ?? 'libre';
-                  final seleccionado = _asientoSeleccionado == num;
-
-                  Color bgColor;
-                  Color borderColor;
-                  Color textColor;
-                  IconData icon;
-                  bool tappable = false;
-
-                  if (seleccionado) {
-                    bgColor =
-                        const Color(0xFF1E6BFF).withValues(alpha: 0.3);
-                    borderColor = const Color(0xFF1E6BFF);
-                    textColor = Colors.white;
-                    icon = Icons.person;
-                    tappable = true;
-                  } else if (estado == 'libre') {
-                    bgColor =
-                        const Color(0xFF10B981).withValues(alpha: 0.1);
-                    borderColor =
-                        const Color(0xFF10B981).withValues(alpha: 0.4);
-                    textColor = const Color(0xFF10B981);
-                    icon = Icons.person_outline;
-                    tappable = true;
-                  } else if (estado == 'ocupado') {
-                    bgColor = const Color(0xFF1F2937);
-                    borderColor = const Color(0xFF374151);
-                    textColor = const Color(0xFF4B5563);
-                    icon = Icons.person;
-                    tappable = false;
-                  } else {
-                    bgColor =
-                        const Color(0xFFF59E0B).withValues(alpha: 0.1);
-                    borderColor =
-                        const Color(0xFFF59E0B).withValues(alpha: 0.4);
-                    textColor = const Color(0xFFF59E0B);
-                    icon = Icons.lock_outline;
-                    tappable = false;
-                  }
-
-                  return GestureDetector(
-                    onTap: tappable
-                        ? () =>
-                        setState(() => _asientoSeleccionado = num)
-                        : null,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      decoration: BoxDecoration(
-                        color: bgColor,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                            color: borderColor,
-                            width: seleccionado ? 2 : 1),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(icon, color: textColor, size: 20),
-                          const SizedBox(height: 2),
-                          Text('$num',
-                              style: TextStyle(
-                                  color: textColor,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700)),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Leyenda
-            Row(
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
               children: [
-                _leyenda(const Color(0xFF10B981), 'Libre'),
-                const SizedBox(width: 16),
-                _leyenda(const Color(0xFF1E6BFF), 'Seleccionado'),
-                const SizedBox(width: 16),
-                _leyenda(const Color(0xFF4B5563), 'Ocupado'),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            // Datos del viajero (RF50)
-            const Text('Datos del viajero',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-
-            if (_error != null) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF3B30).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: const Color(0xFFFF3B30).withValues(alpha: 0.3)),
-                ),
-                child: Row(
+                const Text('Distribución de Asientos Colectivo',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                const Text('Capacidad máxima regulada: 4 Pasajeros',
+                    style: TextStyle(
+                        color: Color(0xFF6B7280), fontSize: 13)),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.error_outline,
-                        color: Color(0xFFFF3B30), size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(_error!,
-                          style: const TextStyle(
-                              color: Color(0xFFFF3B30), fontSize: 13)),
+                    const Icon(Icons.location_on_rounded,
+                        color: Color(0xFF1E6BFF), size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Recojo en: ${widget.paradero}',
+                      style: const TextStyle(
+                          color: Color(0xFF1E6BFF),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 12),
-            ],
+                const SizedBox(height: 24),
 
-            _buildField(
-              controller: _nombreCtrl,
-              hint: 'Nombre completo del viajero',
-              icon: Icons.person_outline,
-            ),
-            const SizedBox(height: 12),
-            _buildField(
-              controller: _dniCtrl,
-              hint: 'DNI del viajero',
-              icon: Icons.badge_outlined,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(12),
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF111827),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF1F2937)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment:
+                        MainAxisAlignment.spaceAround,
+                        children: [
+                          const Icon(
+                              Icons.airline_seat_recline_normal,
+                              color: Color(0xFF374151),
+                              size: 42),
+                          _buildBotonAsiento(1, ocupados),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      const Divider(
+                          color: Color(0xFF1F2937), thickness: 1.5),
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment:
+                        MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildBotonAsiento(2, ocupados),
+                          _buildBotonAsiento(3, ocupados),
+                          _buildBotonAsiento(4, ocupados),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed:
+                    _asientoSeleccionado == null || _guardando
+                        ? null
+                        : () => _confirmarReserva(data),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E6BFF),
+                      disabledBackgroundColor:
+                      const Color(0xFF1F2937),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: _guardando
+                        ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                        : const Text('Confirmar Reserva y Asiento',
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white)),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 12),
-            _buildField(
-              controller: _paraderoCtrl,
-              hint: 'Paradero de recojo',
-              icon: Icons.location_on_outlined,
-            ),
-            const SizedBox(height: 32),
+          );
+        },
+      ),
+    );
+  }
 
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _confirmarReserva,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E6BFF),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
-                ),
-                child: _loading
-                    ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 2.5))
-                    : const Text('Confirmar y pagar S/ 15.00',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
+  Widget _buildBotonAsiento(int numero, List<int> ocupados) {
+    final estaOcupado = ocupados.contains(numero);
+    final esMio = _asientoSeleccionado == numero;
+
+    Color colorFondo = const Color(0xFF0A0E1A);
+    Color colorTexto = Colors.white;
+    BoxBorder borde = Border.all(color: const Color(0xFF374151));
+
+    if (estaOcupado) {
+      colorFondo = const Color(0xFFFF3B30).withOpacity(0.15);
+      colorTexto = const Color(0xFFFF3B30);
+      borde = Border.all(color: const Color(0xFFFF3B30));
+    } else if (esMio) {
+      colorFondo = const Color(0xFF1E6BFF);
+      colorTexto = Colors.white;
+      borde = Border.all(color: const Color(0xFF1E6BFF));
+    }
+
+    return GestureDetector(
+      onTap: estaOcupado
+          ? null
+          : () => setState(() => _asientoSeleccionado = numero),
+      child: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: colorFondo,
+          borderRadius: BorderRadius.circular(14),
+          border: borde,
+        ),
+        child: Center(
+          child: Text('$numero',
+              style: TextStyle(
+                  color: colorTexto,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16)),
         ),
       ),
     );
   }
 
-  Widget _leyenda(Color color, String label) {
-    return Row(
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(3),
-            border: Border.all(color: color),
-          ),
+  void _mostrarCodigoExitoso(String codigo) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF111827),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        title: const Text('🎉 ¡Reserva Exitosa!',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Muestra este código al abordar el vehículo:',
+                style: TextStyle(
+                    color: Color(0xFF9CA3AF), fontSize: 14)),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0E1A),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(codigo,
+                  style: const TextStyle(
+                      color: Color(0xFF1E6BFF),
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 4)),
+            ),
+            const SizedBox(height: 16),
+            const Text('¿Deseas agregar otro pasajero?',
+                style: TextStyle(
+                    color: Color(0xFF6B7280), fontSize: 13)),
+          ],
         ),
-        const SizedBox(width: 6),
-        Text(label,
-            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
-      ],
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+            },
+            child: const Text('Listo',
+                style: TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              setState(() => _asientoSeleccionado = null);
+            },
+            child: const Text('+ Agregar pasajero',
+                style: TextStyle(
+                    color: Color(0xFF1E6BFF),
+                    fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    TextInputType? keyboardType,
-    List<TextInputFormatter>? inputFormatters,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      inputFormatters: inputFormatters,
-      style: const TextStyle(color: Colors.white, fontSize: 15),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF4B5563)),
-        prefixIcon: Icon(icon, color: const Color(0xFF6B7280), size: 20),
-        filled: true,
-        fillColor: const Color(0xFF111827),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF1F2937)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF1F2937)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
-        ),
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+  void _mostrarError(String msg) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF111827),
+        title:
+        const Text('Error', style: TextStyle(color: Colors.white)),
+        content:
+        Text(msg, style: const TextStyle(color: Colors.grey)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK')),
+        ],
       ),
     );
   }

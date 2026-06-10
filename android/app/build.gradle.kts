@@ -34,7 +34,7 @@ android {
 
     defaultConfig {
         applicationId = "com.sicol.sicol_app"
-        minSdk = flutter.minSdkVersion
+        minSdk = flutter.minSdkVersion          // cambia esta línea
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

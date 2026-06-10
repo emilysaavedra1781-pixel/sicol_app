@@ -10,75 +10,11 @@ class BookingService {
   // ─── RF06: Colectivos disponibles ────────────────────────────────────────
 
   Stream<QuerySnapshot> getColectivosDisponibles({String? ruta}) {
-    var query = _db
-        .collection('viajes')
-        .where('estado', isEqualTo: 'activo');
+    var query = _db.collection('viajes').where('estado', isEqualTo: 'activo');
     if (ruta != null) {
       query = query.where('ruta', isEqualTo: ruta);
     }
     return query.snapshots();
-  }
-
-  // ─── RF07: Reservar asiento ───────────────────────────────────────────────
-
-  Future<void> reservarAsiento({
-    required String viajeId,
-    required int numeroAsiento,
-    required String nombreViajero,
-    required String dniViajero,
-    required String paradero,
-  }) async {
-    final viajeRef = _db.collection('viajes').doc(viajeId);
-
-    await _db.runTransaction((tx) async {
-      final viajeSnap = await tx.get(viajeRef);
-      if (!viajeSnap.exists) throw Exception('Viaje no encontrado.');
-
-      final data = viajeSnap.data()!;
-      final asientos = Map<String, dynamic>.from(data['asientos'] ?? {});
-      final key = 'asiento_$numeroAsiento';
-      final asiento = asientos[key] as Map<String, dynamic>?;
-
-      if (asiento == null) throw Exception('Asiento no existe.');
-      if (asiento['estado'] != 'libre') {
-        throw Exception('El asiento ya no está disponible.');
-      }
-
-      // Marcar como ocupado
-      asientos[key] = {
-        'numero': numeroAsiento,
-        'estado': 'ocupado',
-        'pasajero': {
-          'uid': _uid,
-          'nombre': nombreViajero,
-          'dni': dniViajero,
-          'paradero': paradero,
-          'asiento': numeroAsiento,
-        },
-      };
-
-      final asientosOcupados = (data['asientosOcupados'] ?? 0) + 1;
-      final ingresoTotal = (data['ingresoTotal'] ?? 0) + 15;
-
-      tx.update(viajeRef, {
-        'asientos': asientos,
-        'asientosOcupados': asientosOcupados,
-        'ingresoTotal': ingresoTotal,
-      });
-    });
-
-    // Registrar reserva en colección aparte
-    await _db.collection('reservas').add({
-      'pasajeroUid': _uid,
-      'viajeId': viajeId,
-      'numeroAsiento': numeroAsiento,
-      'nombreViajero': nombreViajero,
-      'dniViajero': dniViajero,
-      'paradero': paradero,
-      'monto': 15.0,
-      'estado': 'confirmada',
-      'creadoEn': FieldValue.serverTimestamp(),
-    });
   }
 
   // ─── RF10: Mis reservas ───────────────────────────────────────────────────
@@ -106,21 +42,26 @@ class BookingService {
       if (!viajeSnap.exists) throw Exception('Viaje no encontrado.');
 
       final data = viajeSnap.data()!;
-      final asientos = Map<String, dynamic>.from(data['asientos'] ?? {});
-      final key = 'asiento_$numeroAsiento';
 
-      asientos[key] = {
+      // ── Actualizar mapa asientos ─────────────────────────────────
+      final asientosMapa = Map<String, dynamic>.from(data['asientos'] ?? {});
+      final key = 'asiento_$numeroAsiento';
+      asientosMapa[key] = {
         'numero': numeroAsiento,
         'estado': 'libre',
         'pasajero': null,
       };
 
-      final asientosOcupados =
-      ((data['asientosOcupados'] ?? 1) - 1).clamp(0, 999);
+      // ── Actualizar array asientosListaOcupados ───────────────────
+      final ocupadosLista = List<int>.from(data['asientosListaOcupados'] ?? []);
+      ocupadosLista.remove(numeroAsiento);
+
+      final asientosOcupados = ocupadosLista.length;
       final ingresoTotal = ((data['ingresoTotal'] ?? 15) - 15).clamp(0, 99999);
 
       tx.update(viajeRef, {
-        'asientos': asientos,
+        'asientos': asientosMapa,
+        'asientosListaOcupados': ocupadosLista,
         'asientosOcupados': asientosOcupados,
         'ingresoTotal': ingresoTotal,
       });
