@@ -227,19 +227,25 @@ class _RegisterViewState extends State<RegisterView> {
                 _seccionTitulo('Datos personales'),
                 const SizedBox(height: 16),
 
-                _buildLabel('DNI / Pasaporte / Carnet'),
+                _buildLabel('DNI '),
                 const SizedBox(height: 8),
                 _buildField(
                   controller: _dniCtrl,
-                  hint: '12345678',
+                  hint: '',
                   icon: Icons.badge_outlined,
                   keyboardType: TextInputType.number,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(12),
                   ],
-                  validator: (v) =>
-                  v == null || v.isEmpty ? 'Ingresa tu documento' : null,
+
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Ingresa tu documento';
+                    if (v.length != 8) return 'El DNI debe tener 8 dígitos';
+                    if (RegExp(r'^(\d)\1+$').hasMatch(v)) return 'DNI inválido';
+                    if (v == '12345678' || v == '87654321') return 'DNI inválido';
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
 
@@ -255,8 +261,13 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _nombreCtrl,
                             hint: 'Juan',
                             icon: Icons.person_outline,
-                            validator: (v) =>
-                            v == null || v.isEmpty ? 'Requerido' : null,
+                            validator: (v) {
+                              if (v == null || v.isEmpty) return 'Requerido';
+                              if (v.trim().length < 2) return 'Mínimo 2 caracteres';
+                              if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$").hasMatch(v)) return 'Solo letras';
+                              if (RegExp(r'^(.)\1+$').hasMatch(v.trim())) return 'Nombre inválido';
+                              return null;
+                            },
                           ),
                         ],
                       ),
@@ -272,8 +283,13 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _apellidoCtrl,
                             hint: 'Pérez',
                             icon: Icons.person_outline,
-                            validator: (v) =>
-                            v == null || v.isEmpty ? 'Requerido' : null,
+                            validator: (v) {
+                              if (v == null || v.isEmpty) return 'Requerido';
+                              if (v.trim().length < 2) return 'Mínimo 2 caracteres';
+                              if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$").hasMatch(v)) return 'Solo letras';
+                              if (RegExp(r'^(.)\1+$').hasMatch(v.trim())) return 'Nombre inválido';
+                              return null;
+                            },
                           ),
                         ],
                       ),
@@ -296,6 +312,8 @@ class _RegisterViewState extends State<RegisterView> {
                     if (v == null || v.isEmpty) return 'Requerido';
                     if (v.length != 9) return '9 dígitos exactos';
                     if (!v.startsWith('9')) return 'Debe empezar con 9';
+                    if (RegExp(r'^(\d)\1+$').hasMatch(v)) return 'Número inválido';  // 999999999
+                    if (v == '987654321' || v == '912345678') return 'Número inválido';
                     return null;
                   },
                   decoration: InputDecoration(
@@ -350,7 +368,9 @@ class _RegisterViewState extends State<RegisterView> {
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
-                    if (!v.contains('@')) return 'Correo inválido';
+                    if (!RegExp(r'^[\w\.-]+@[\w\.-]+\.\w{2,4}$').hasMatch(v)) return 'Correo inválido';
+                    final dominiosBloqueados = ['tempmail', 'mailinator', 'guerrillamail', 'yopmail'];
+                    if (dominiosBloqueados.any((d) => v.toLowerCase().contains(d))) return 'Correo inválido';
                     return null;
                   },
                 ),
@@ -365,8 +385,27 @@ class _RegisterViewState extends State<RegisterView> {
                       controller: _fechaCtrl,
                       hint: 'DD/MM/AAAA',
                       icon: Icons.calendar_today_outlined,
-                      validator: (v) =>
-                      v == null || v.isEmpty ? 'Requerido' : null,
+                      validator: (v) {
+                        if (v == null || v.isEmpty) return 'Requerido';
+                        try {
+                          final parts = v.split('/');
+                          final fecha = DateTime(
+                            int.parse(parts[2]),
+                            int.parse(parts[1]),
+                            int.parse(parts[0]),
+                          );
+                          final hoy = DateTime.now();
+                          final edad = hoy.year - fecha.year -
+                              ((hoy.month < fecha.month ||
+                                  (hoy.month == fecha.month && hoy.day < fecha.day)) ? 1 : 0);
+                          if (edad < 18) return 'Debes ser mayor de 18 años';
+                          if (edad > 100) return 'Fecha inválida';
+                        } catch (_) {
+                          return 'Fecha inválida';
+                        }
+                        return null;
+                      },
+
                     ),
                   ),
                 ),
@@ -379,8 +418,11 @@ class _RegisterViewState extends State<RegisterView> {
                     controller: _licenciaCtrl,
                     hint: 'Q12345678',
                     icon: Icons.card_membership_outlined,
-                    validator: (v) =>
-                    v == null || v.isEmpty ? 'Requerido' : null,
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Requerido';
+                      if (!RegExp(r'^[A-Za-z]\d{8}$').hasMatch(v)) return 'Formato: Q12345678';
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -406,6 +448,8 @@ class _RegisterViewState extends State<RegisterView> {
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
                     if (v.length < 6) return 'Mínimo 6 caracteres';
+                    if (RegExp(r'^(.)\1+$').hasMatch(v)) return 'Contraseña muy débil';
+                    if (['123456', '654321', 'password', '000000'].contains(v)) return 'Contraseña muy débil';
                     return null;
                   },
                 ),
@@ -422,8 +466,11 @@ class _RegisterViewState extends State<RegisterView> {
                     hint: 'ABC-123',
                     icon: Icons.directions_car_outlined,
                     textCapitalization: TextCapitalization.characters,
-                    validator: (v) =>
-                    v == null || v.isEmpty ? 'Requerido' : null,
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Requerido';
+                      if (!RegExp(r'^[A-Za-z]{3}-?\d{3}$').hasMatch(v)) return 'Formato: ABC-123';
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 16),
 
@@ -439,8 +486,15 @@ class _RegisterViewState extends State<RegisterView> {
                               controller: _marcaCtrl,
                               hint: 'Toyota',
                               icon: Icons.directions_car_outlined,
-                              validator: (v) =>
-                              v == null || v.isEmpty ? 'Requerido' : null,
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) return 'Requerido';
+                                if (v.trim().length < 2) return 'Mínimo 2 caracteres';
+                                if (!RegExp(r'^[a-zA-ZÀ-ÿ\s\-]+$').hasMatch(v.trim())) {
+                                  return 'Solo letras';
+                                }
+                                return null;
+                              },
+
                             ),
                           ],
                         ),
@@ -456,8 +510,15 @@ class _RegisterViewState extends State<RegisterView> {
                               controller: _modeloCtrl,
                               hint: 'Corolla',
                               icon: Icons.directions_car_outlined,
-                              validator: (v) =>
-                              v == null || v.isEmpty ? 'Requerido' : null,
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) return 'Requerido';
+                                if (v.trim().length < 2) return 'Mínimo 2 caracteres';
+                                if (!RegExp(r'^[a-zA-Z0-9À-ÿ\s\-]+$').hasMatch(v.trim())) {
+                                  return 'Formato inválido';
+                                }
+                                return null;
+                              },
+
                             ),
                           ],
                         ),
@@ -466,48 +527,82 @@ class _RegisterViewState extends State<RegisterView> {
                   ),
                   const SizedBox(height: 16),
 
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildLabel('Color'),
-                            const SizedBox(height: 8),
-                            _buildField(
-                              controller: _colorCtrl,
-                              hint: 'Blanco',
-                              icon: Icons.color_lens_outlined,
-                              validator: (v) =>
-                              v == null || v.isEmpty ? 'Requerido' : null,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildLabel('Capacidad'),
-                            const SizedBox(height: 8),
-                            _buildField(
-                              controller: _capacidadCtrl,
-                              hint: '4',
-                              icon: Icons.people_outline,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              validator: (v) =>
-                              v == null || v.isEmpty ? 'Requerido' : null,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+    Row(
+    children: [
+    Expanded(
+    child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+    _buildLabel('Color'),
+    const SizedBox(height: 8),
+    _buildField(
+    controller: _colorCtrl,
+    hint: 'Blanco',
+    icon: Icons.color_lens_outlined,
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Requerido';
+        if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$").hasMatch(v)) return 'Solo letras';
+        if (v.trim().length < 3) return 'Mínimo 3 caracteres';
+        return null;
+      },
+    ),
+    ],
+    ),
+    ),
+    const SizedBox(width: 12),
+    Expanded(
+    child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+    _buildLabel('Capacidad'),
+    const SizedBox(height: 8),
+    DropdownButtonFormField<String>(
+    value: _capacidadCtrl.text.isEmpty ? null : _capacidadCtrl.text,
+    dropdownColor: const Color(0xFF111827),
+    style: const TextStyle(color: Colors.white, fontSize: 15),
+    decoration: InputDecoration(
+    prefixIcon: const Icon(Icons.people_outline,
+    color: Color(0xFF6B7280), size: 20),
+    filled: true,
+    fillColor: const Color(0xFF111827),
+    border: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(14),
+    borderSide: const BorderSide(color: Color(0xFF1F2937)),
+    ),
+    enabledBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(14),
+    borderSide: const BorderSide(color: Color(0xFF1F2937)),
+    ),
+    focusedBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(14),
+    borderSide: const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
+    ),
+    errorBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(14),
+    borderSide: const BorderSide(color: Color(0xFFFF3B30)),
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+    errorStyle: const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
+    ),
+    hint: const Text('Seleccionar',
+    style: TextStyle(color: Color(0xFF4B5563))),
+    items: ['4', '5', '6', '7', '8', '15']
+        .map((e) => DropdownMenuItem(
+    value: e,
+    child: Text('$e asientos'),
+    ))
+        .toList(),
+    onChanged: (v) => setState(() => _capacidadCtrl.text = v ?? ''),
+    validator: (v) => v == null || v.isEmpty ? 'Requerido' : null,
+    ),
+    ],
+    ),
+    ),
+    ],
+    ),
                 ],
+
+
 
                 const SizedBox(height: 32),
 
