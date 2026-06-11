@@ -5,8 +5,9 @@
 
 import 'package:flutter/material.dart';
 import '../../../../services/auth_service.dart';
-import '../../forgot_password/forgot_password_view.dart';
-import '../../../conductor/conductor_home_view.dart';
+import '../forgot_password/forgot_password_view.dart';
+import '../../conductor/conductor_home_view.dart';
+import 'package:flutter/services.dart';
 
 class ConductorLoginView extends StatefulWidget {
   const ConductorLoginView({super.key});
@@ -107,6 +108,7 @@ class _ConductorLoginViewState extends State<ConductorLoginView> {
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
           child: Form(
             key: _formKey,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -205,9 +207,43 @@ class _ConductorLoginViewState extends State<ConductorLoginView> {
                 TextFormField(
                   controller: _codigoCtrl,
                   textCapitalization: TextCapitalization.characters,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Ingresa tu código de conductor';
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                  ),
+                  maxLength: 8,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                      RegExp(r'[A-Za-z0-9-]'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    final upper = value.toUpperCase();
+
+                    if (value != upper) {
+                      _codigoCtrl.value = TextEditingValue(
+                        text: upper,
+                        selection: TextSelection.collapsed(
+                          offset: upper.length,
+                        ),
+                      );
+                    }
+                  },
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa tu código de conductor';
+                    }
+
+                    if (value != value.trim()) {
+                      return 'No uses espacios al inicio o final';
+                    }
+
+                    final codigoRegex = RegExp(r'^COND-\d{3}$');
+
+                    if (!codigoRegex.hasMatch(value)) {
+                      return 'Formato válido: COND-001';
+                    }
+
                     return null;
                   },
                   decoration: _inputDecoration(
@@ -215,7 +251,6 @@ class _ConductorLoginViewState extends State<ConductorLoginView> {
                     icon: Icons.badge_outlined,
                   ),
                 ),
-                const SizedBox(height: 20),
 
                 // ── Campo: contraseña ───────────────────────────────────
                 _buildLabel('Contraseña'),
@@ -223,9 +258,23 @@ class _ConductorLoginViewState extends State<ConductorLoginView> {
                 TextFormField(
                   controller: _passCtrl,
                   obscureText: _obscurePassword,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Ingresa tu contraseña';
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Ingresa tu contraseña';
+                    }
+
+                    if (value != value.trim()) {
+                      return 'No uses espacios al inicio o final';
+                    }
+
+                    if (value.length < 8) {
+                      return 'La contraseña debe tener al menos 8 caracteres';
+                    }
+
                     return null;
                   },
                   decoration: _inputDecoration(
@@ -239,12 +288,14 @@ class _ConductorLoginViewState extends State<ConductorLoginView> {
                         color: const Color(0xFF6B7280),
                         size: 20,
                       ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
 
                 // ── ¿Olvidaste tu contraseña? (RF46) ───────────────────
                 Align(
