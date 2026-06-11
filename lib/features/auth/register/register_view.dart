@@ -69,19 +69,22 @@ class _RegisterViewState extends State<RegisterView> {
       initialDate: DateTime(2000),
       firstDate: DateTime(1950),
       lastDate: DateTime.now().subtract(const Duration(days: 365 * 18)),
-      builder: (context, child) => Theme(
-        data: ThemeData.dark().copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: Color(0xFF1E6BFF),
-            surface: Color(0xFF111827),
+      builder: (context, child) =>
+          Theme(
+            data: ThemeData.dark().copyWith(
+              colorScheme: const ColorScheme.dark(
+                primary: Color(0xFF1E6BFF),
+                surface: Color(0xFF111827),
+              ),
+            ),
+            child: child!,
           ),
-        ),
-        child: child!,
-      ),
     );
     if (picked != null) {
       _fechaCtrl.text =
-      '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
+      '${picked.day.toString().padLeft(2, '0')}/${picked.month
+          .toString()
+          .padLeft(2, '0')}/${picked.year}';
     }
   }
 
@@ -117,7 +120,8 @@ class _RegisterViewState extends State<RegisterView> {
       return;
     }
 
-    final dniRegistrado = await _authService.isDniRegistered(_dniCtrl.text.trim());
+    final dniRegistrado = await _authService.isDniRegistered(
+        _dniCtrl.text.trim());
     if (!mounted) return;
     if (dniRegistrado) {
       setState(() {
@@ -148,28 +152,29 @@ class _RegisterViewState extends State<RegisterView> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => OtpVerificationView(
-          verificationId: 'test-verification-id',
-          phoneNumber: '+51$celular',
-          userData: {
-            'rol': _rolSeleccionado,
-            'dni': _dniCtrl.text.trim(),
-            'nombre': _nombreCtrl.text.trim(),
-            'apellido': _apellidoCtrl.text.trim(),
-            'celular': celular,
-            'email': _emailCtrl.text.trim(),
-            'password': _passCtrl.text,
-            'fechaNacimiento': _fechaCtrl.text,
-            if (_rolSeleccionado == 'conductor') ...{
-              'numeroLicencia': _licenciaCtrl.text.trim(),
-              'placa': _placaCtrl.text.trim().toUpperCase(),
-              'capacidad': _capacidadCtrl.text.trim(),
-              'modelo': _modeloCtrl.text.trim(),
-              'marca': _marcaCtrl.text.trim(),
-              'color': _colorCtrl.text.trim(),
-            },
-          },
-        ),
+        builder: (_) =>
+            OtpVerificationView(
+              verificationId: 'test-verification-id',
+              phoneNumber: '+51$celular',
+              userData: {
+                'rol': _rolSeleccionado,
+                'dni': _dniCtrl.text.trim(),
+                'nombre': _nombreCtrl.text.trim(),
+                'apellido': _apellidoCtrl.text.trim(),
+                'celular': celular,
+                'email': _emailCtrl.text.trim(),
+                'password': _passCtrl.text,
+                'fechaNacimiento': _fechaCtrl.text,
+                if (_rolSeleccionado == 'conductor') ...{
+                  'numeroLicencia': _licenciaCtrl.text.trim(),
+                  'placa': _placaCtrl.text.trim().toUpperCase(),
+                  'capacidad': _capacidadCtrl.text.trim(),
+                  'modelo': _modeloCtrl.text.trim(),
+                  'marca': _marcaCtrl.text.trim(),
+                  'color': _colorCtrl.text.trim(),
+                },
+              },
+            ),
       ),
     );
   }
@@ -182,12 +187,15 @@ class _RegisterViewState extends State<RegisterView> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+          icon: const Icon(
+              Icons.arrow_back_ios_new, color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text('Crear cuenta',
             style: TextStyle(
-                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -218,7 +226,8 @@ class _RegisterViewState extends State<RegisterView> {
                   child: Row(
                     children: [
                       _rolButton('pasajero', 'Pasajero', Icons.person_outline),
-                      _rolButton('conductor', 'Conductor', Icons.drive_eta_outlined),
+                      _rolButton(
+                          'conductor', 'Conductor', Icons.drive_eta_outlined),
                     ],
                   ),
                 ),
@@ -236,14 +245,15 @@ class _RegisterViewState extends State<RegisterView> {
                   keyboardType: TextInputType.number,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(12),
+                    LengthLimitingTextInputFormatter(8),
                   ],
 
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Ingresa tu documento';
                     if (v.length != 8) return 'El DNI debe tener 8 dígitos';
                     if (RegExp(r'^(\d)\1+$').hasMatch(v)) return 'DNI inválido';
-                    if (v == '12345678' || v == '87654321') return 'DNI inválido';
+                    if (v == '12345678' || v == '87654321')
+                      return 'DNI inválido';
                     return null;
                   },
                 ),
@@ -261,11 +271,19 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _nombreCtrl,
                             hint: 'Juan',
                             icon: Icons.person_outline,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r"[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]")),
+                            ],
                             validator: (v) {
                               if (v == null || v.isEmpty) return 'Requerido';
-                              if (v.trim().length < 2) return 'Mínimo 2 caracteres';
-                              if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$").hasMatch(v)) return 'Solo letras';
-                              if (RegExp(r'^(.)\1+$').hasMatch(v.trim())) return 'Nombre inválido';
+                              if (v
+                                  .trim()
+                                  .length < 2) return 'Mínimo 2 caracteres';
+                              if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$")
+                                  .hasMatch(v)) return 'Solo letras';
+                              if (RegExp(r'^(.)\1+$').hasMatch(v.trim()))
+                                return 'Nombre inválido';
                               return null;
                             },
                           ),
@@ -283,11 +301,19 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _apellidoCtrl,
                             hint: 'Pérez',
                             icon: Icons.person_outline,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r"[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]")),
+                            ],
                             validator: (v) {
                               if (v == null || v.isEmpty) return 'Requerido';
-                              if (v.trim().length < 2) return 'Mínimo 2 caracteres';
-                              if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$").hasMatch(v)) return 'Solo letras';
-                              if (RegExp(r'^(.)\1+$').hasMatch(v.trim())) return 'Nombre inválido';
+                              if (v
+                                  .trim()
+                                  .length < 2) return 'Mínimo 2 caracteres';
+                              if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$")
+                                  .hasMatch(v)) return 'Solo letras';
+                              if (RegExp(r'^(.)\1+$').hasMatch(v.trim()))
+                                return 'Nombre inválido';
                               return null;
                             },
                           ),
@@ -312,8 +338,12 @@ class _RegisterViewState extends State<RegisterView> {
                     if (v == null || v.isEmpty) return 'Requerido';
                     if (v.length != 9) return '9 dígitos exactos';
                     if (!v.startsWith('9')) return 'Debe empezar con 9';
-                    if (RegExp(r'^(\d)\1+$').hasMatch(v)) return 'Número inválido';  // 999999999
-                    if (v == '987654321' || v == '912345678') return 'Número inválido';
+                    if (RegExp(r'^(\d)\1+$').hasMatch(v))
+                      return 'Número inválido';
+                    if (RegExp(r'(\d)\1{5,}').hasMatch(v))
+                      return 'Número inválido';
+                    if (v == '987654321' || v == '912345678')
+                      return 'Número inválido';
                     return null;
                   },
                   decoration: InputDecoration(
@@ -368,9 +398,18 @@ class _RegisterViewState extends State<RegisterView> {
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
-                    if (!RegExp(r'^[\w\.-]+@[\w\.-]+\.\w{2,4}$').hasMatch(v)) return 'Correo inválido';
-                    final dominiosBloqueados = ['tempmail', 'mailinator', 'guerrillamail', 'yopmail'];
-                    if (dominiosBloqueados.any((d) => v.toLowerCase().contains(d))) return 'Correo inválido';
+                    final dominiosPermitidos = [
+                      'gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com',
+                      'icloud.com', 'live.com', 'me.com',
+                    ];
+                    if (!RegExp(r'^[\w\.-]+@[\w\.-]+\.\w{2,4}$').hasMatch(v))
+                      return 'Correo inválido';
+                    final dominio = v
+                        .split('@')
+                        .last
+                        .toLowerCase();
+                    if (!dominiosPermitidos.contains(dominio))
+                      return 'Solo se aceptan correos Gmail, Outlook, Yahoo o iCloud';
                     return null;
                   },
                 ),
@@ -397,7 +436,8 @@ class _RegisterViewState extends State<RegisterView> {
                           final hoy = DateTime.now();
                           final edad = hoy.year - fecha.year -
                               ((hoy.month < fecha.month ||
-                                  (hoy.month == fecha.month && hoy.day < fecha.day)) ? 1 : 0);
+                                  (hoy.month == fecha.month &&
+                                      hoy.day < fecha.day)) ? 1 : 0);
                           if (edad < 18) return 'Debes ser mayor de 18 años';
                           if (edad > 100) return 'Fecha inválida';
                         } catch (_) {
@@ -418,9 +458,14 @@ class _RegisterViewState extends State<RegisterView> {
                     controller: _licenciaCtrl,
                     hint: 'Q12345678',
                     icon: Icons.card_membership_outlined,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r"[A-Za-z0-9]")),
+                      LengthLimitingTextInputFormatter(9),
+                    ],
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Requerido';
-                      if (!RegExp(r'^[A-Za-z]\d{8}$').hasMatch(v)) return 'Formato: Q12345678';
+                      if (!RegExp(r'^[A-Za-z]\d{8}$').hasMatch(v))
+                        return 'Formato: Q12345678';
                       return null;
                     },
                   ),
@@ -448,9 +493,42 @@ class _RegisterViewState extends State<RegisterView> {
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
                     if (v.length < 6) return 'Mínimo 6 caracteres';
-                    if (RegExp(r'^(.)\1+$').hasMatch(v)) return 'Contraseña muy débil';
-                    if (['123456', '654321', 'password', '000000'].contains(v)) return 'Contraseña muy débil';
+                    if (!RegExp(r'[A-Z]').hasMatch(v))
+                      return 'Debe tener al menos una mayúscula';
+                    if (!RegExp(r'[!@#\$%^&*(),.?":{}|<>]').hasMatch(v))
+                      return 'Debe tener al menos un símbolo (@, #, !)';
+                    if (RegExp(r'^(.)\1+$').hasMatch(v))
+                      return 'Contraseña muy débil';
+                    if (['123456', '654321', 'password', '000000'].contains(v))
+                      return 'Contraseña muy débil';
                     return null;
+                  },
+                ),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _passCtrl,
+                  builder: (context, value, _) {
+                    final pass = value.text;
+                    final tieneMayuscula = RegExp(r'[A-Z]').hasMatch(pass);
+                    final tieneSimbolo = RegExp(r'[!@#\$%^&*(),.?":{}|<>]')
+                        .hasMatch(pass);
+                    final tieneLength = pass.length >= 6;
+
+                    if (pass.isEmpty) return const SizedBox();
+
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Column(
+                        children: [
+                          _indicadorPass('Mínimo 6 caracteres', tieneLength),
+                          const SizedBox(height: 4),
+                          _indicadorPass(
+                              'Al menos una mayúscula', tieneMayuscula),
+                          const SizedBox(height: 4),
+                          _indicadorPass(
+                              'Al menos un símbolo (@, #, !...)', tieneSimbolo),
+                        ],
+                      ),
+                    );
                   },
                 ),
 
@@ -465,10 +543,16 @@ class _RegisterViewState extends State<RegisterView> {
                     controller: _placaCtrl,
                     hint: 'ABC-123',
                     icon: Icons.directions_car_outlined,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                          RegExp(r"[A-Za-z0-9\-]")),
+                      LengthLimitingTextInputFormatter(7),
+                    ],
                     textCapitalization: TextCapitalization.characters,
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Requerido';
-                      if (!RegExp(r'^[A-Za-z]{3}-?\d{3}$').hasMatch(v)) return 'Formato: ABC-123';
+                      if (!RegExp(r'^[A-Za-z]{3}-?\d{3}$').hasMatch(v))
+                        return 'Formato: ABC-123';
                       return null;
                     },
                   ),
@@ -486,10 +570,19 @@ class _RegisterViewState extends State<RegisterView> {
                               controller: _marcaCtrl,
                               hint: 'Toyota',
                               icon: Icons.directions_car_outlined,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                    RegExp(r"[a-zA-ZÀ-ÿ\s\-]")),
+                              ],
                               validator: (v) {
-                                if (v == null || v.trim().isEmpty) return 'Requerido';
-                                if (v.trim().length < 2) return 'Mínimo 2 caracteres';
-                                if (!RegExp(r'^[a-zA-ZÀ-ÿ\s\-]+$').hasMatch(v.trim())) {
+                                if (v == null || v
+                                    .trim()
+                                    .isEmpty) return 'Requerido';
+                                if (v
+                                    .trim()
+                                    .length < 2) return 'Mínimo 2 caracteres';
+                                if (!RegExp(r'^[a-zA-ZÀ-ÿ\s\-]+$').hasMatch(
+                                    v.trim())) {
                                   return 'Solo letras';
                                 }
                                 return null;
@@ -511,9 +604,14 @@ class _RegisterViewState extends State<RegisterView> {
                               hint: 'Corolla',
                               icon: Icons.directions_car_outlined,
                               validator: (v) {
-                                if (v == null || v.trim().isEmpty) return 'Requerido';
-                                if (v.trim().length < 2) return 'Mínimo 2 caracteres';
-                                if (!RegExp(r'^[a-zA-Z0-9À-ÿ\s\-]+$').hasMatch(v.trim())) {
+                                if (v == null || v
+                                    .trim()
+                                    .isEmpty) return 'Requerido';
+                                if (v
+                                    .trim()
+                                    .length < 2) return 'Mínimo 2 caracteres';
+                                if (!RegExp(r'^[a-zA-Z0-9À-ÿ\s\-]+$').hasMatch(
+                                    v.trim())) {
                                   return 'Formato inválido';
                                 }
                                 return null;
@@ -527,81 +625,150 @@ class _RegisterViewState extends State<RegisterView> {
                   ),
                   const SizedBox(height: 16),
 
-    Row(
-    children: [
-    Expanded(
-    child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-    _buildLabel('Color'),
-    const SizedBox(height: 8),
-    _buildField(
-    controller: _colorCtrl,
-    hint: 'Blanco',
-    icon: Icons.color_lens_outlined,
-      validator: (v) {
-        if (v == null || v.isEmpty) return 'Requerido';
-        if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$").hasMatch(v)) return 'Solo letras';
-        if (v.trim().length < 3) return 'Mínimo 3 caracteres';
-        return null;
-      },
-    ),
-    ],
-    ),
-    ),
-    const SizedBox(width: 12),
-    Expanded(
-    child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-    _buildLabel('Capacidad'),
-    const SizedBox(height: 8),
-    DropdownButtonFormField<String>(
-    value: _capacidadCtrl.text.isEmpty ? null : _capacidadCtrl.text,
-    dropdownColor: const Color(0xFF111827),
-    style: const TextStyle(color: Colors.white, fontSize: 15),
-    decoration: InputDecoration(
-    prefixIcon: const Icon(Icons.people_outline,
-    color: Color(0xFF6B7280), size: 20),
-    filled: true,
-    fillColor: const Color(0xFF111827),
-    border: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(14),
-    borderSide: const BorderSide(color: Color(0xFF1F2937)),
-    ),
-    enabledBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(14),
-    borderSide: const BorderSide(color: Color(0xFF1F2937)),
-    ),
-    focusedBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(14),
-    borderSide: const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
-    ),
-    errorBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(14),
-    borderSide: const BorderSide(color: Color(0xFFFF3B30)),
-    ),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-    errorStyle: const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
-    ),
-    hint: const Text('Seleccionar',
-    style: TextStyle(color: Color(0xFF4B5563))),
-    items: ['4', '5', '6', '7', '8', '15']
-        .map((e) => DropdownMenuItem(
-    value: e,
-    child: Text('$e asientos'),
-    ))
-        .toList(),
-    onChanged: (v) => setState(() => _capacidadCtrl.text = v ?? ''),
-    validator: (v) => v == null || v.isEmpty ? 'Requerido' : null,
-    ),
-    ],
-    ),
-    ),
-    ],
-    ),
-                ],
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
 
+                            _buildLabel('Color'),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              value: _colorCtrl.text.isEmpty ? null : _colorCtrl
+                                  .text,
+                              dropdownColor: const Color(0xFF111827),
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 15),
+                              decoration: InputDecoration(
+                                prefixIcon: const Icon(
+                                    Icons.color_lens_outlined,
+                                    color: Color(0xFF6B7280), size: 20),
+                                filled: true,
+                                fillColor: const Color(0xFF111827),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFF1F2937)),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFF1F2937)),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFF1E6BFF), width: 1.5),
+                                ),
+                                errorBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFFFF3B30)),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 16),
+                                errorStyle: const TextStyle(
+                                    color: Color(0xFFFF3B30), fontSize: 12),
+                              ),
+                              hint: const Text('Seleccionar',
+                                  style: TextStyle(color: Color(0xFF4B5563))),
+                              items: [
+                                'Blanco',
+                                'Negro',
+                                'Gris',
+                                'Plata',
+                                'Rojo',
+                                'Azul',
+                                'Verde',
+                                'Amarillo',
+                                'Naranja',
+                                'Marrón',
+                                'Beige',
+                                'Celeste',
+                              ].map((color) =>
+                                  DropdownMenuItem(
+                                    value: color,
+                                    child: Text(color),
+                                  )).toList(),
+                              onChanged: (v) =>
+                                  setState(() => _colorCtrl.text = v ?? ''),
+                              validator: (v) =>
+                              v == null || v.isEmpty
+                                  ? 'Requerido'
+                                  : null,
+                            ),
+
+
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildLabel('Capacidad'),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              value: _capacidadCtrl.text.isEmpty
+                                  ? null
+                                  : _capacidadCtrl.text,
+                              dropdownColor: const Color(0xFF111827),
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 15),
+                              decoration: InputDecoration(
+                                prefixIcon: const Icon(Icons.people_outline,
+                                    color: Color(0xFF6B7280), size: 20),
+                                filled: true,
+                                fillColor: const Color(0xFF111827),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFF1F2937)),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFF1F2937)),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFF1E6BFF), width: 1.5),
+                                ),
+                                errorBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFFFF3B30)),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 16),
+                                errorStyle: const TextStyle(
+                                    color: Color(0xFFFF3B30), fontSize: 12),
+                              ),
+                              hint: const Text('Seleccionar',
+                                  style: TextStyle(color: Color(0xFF4B5563))),
+                              items: ['4', '5', '6', '7', '8', '15']
+                                  .map((e) =>
+                                  DropdownMenuItem(
+                                    value: e,
+                                    child: Text('$e asientos'),
+                                  ))
+                                  .toList(),
+                              onChanged: (v) =>
+                                  setState(() => _capacidadCtrl.text = v ?? ''),
+                              validator: (v) =>
+                              v == null || v.isEmpty
+                                  ? 'Requerido'
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
 
 
                 const SizedBox(height: 32),
@@ -638,30 +805,32 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
-  Widget _seccionTitulo(String texto) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    decoration: BoxDecoration(
-      color: const Color(0xFF1E6BFF).withOpacity(0.12),
-      borderRadius: BorderRadius.circular(8),
-      border:
-      Border.all(color: const Color(0xFF1E6BFF).withOpacity(0.3)),
-    ),
-    child: Text(texto,
-        style: const TextStyle(
-            color: Color(0xFF1E6BFF),
-            fontSize: 13,
-            fontWeight: FontWeight.w600)),
-  );
+  Widget _seccionTitulo(String texto) =>
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E6BFF).withOpacity(0.12),
+          borderRadius: BorderRadius.circular(8),
+          border:
+          Border.all(color: const Color(0xFF1E6BFF).withOpacity(0.3)),
+        ),
+        child: Text(texto,
+            style: const TextStyle(
+                color: Color(0xFF1E6BFF),
+                fontSize: 13,
+                fontWeight: FontWeight.w600)),
+      );
 
   Widget _rolButton(String rol, String label, IconData icon) {
     final selected = _rolSeleccionado == rol;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() {
-          _rolSeleccionado = rol;
-          _errorMessage = null;
-        }),
+        onTap: () =>
+            setState(() {
+              _rolSeleccionado = rol;
+              _errorMessage = null;
+            }),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -688,33 +857,35 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
-  Widget _errorBanner(String msg) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFF3B30).withOpacity(0.12),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(
-          color: const Color(0xFFFF3B30).withOpacity(0.3)),
-    ),
-    child: Row(
-      children: [
-        const Icon(Icons.error_outline,
-            color: Color(0xFFFF3B30), size: 18),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(msg,
-              style: const TextStyle(
-                  color: Color(0xFFFF3B30), fontSize: 13)),
+  Widget _errorBanner(String msg) =>
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF3B30).withOpacity(0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: const Color(0xFFFF3B30).withOpacity(0.3)),
         ),
-      ],
-    ),
-  );
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline,
+                color: Color(0xFFFF3B30), size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(msg,
+                  style: const TextStyle(
+                      color: Color(0xFFFF3B30), fontSize: 13)),
+            ),
+          ],
+        ),
+      );
 
-  Widget _buildLabel(String text) => Text(text,
-      style: const TextStyle(
-          color: Color(0xFFD1D5DB),
-          fontSize: 13,
-          fontWeight: FontWeight.w500));
+  Widget _buildLabel(String text) =>
+      Text(text,
+          style: const TextStyle(
+              color: Color(0xFFD1D5DB),
+              fontSize: 13,
+              fontWeight: FontWeight.w500));
 
   Widget _buildField({
     required TextEditingController controller,
@@ -771,6 +942,26 @@ class _RegisterViewState extends State<RegisterView> {
         contentPadding:
         const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
+    );
+  }
+
+  Widget _indicadorPass(String texto, bool cumple) {
+    return Row(
+      children: [
+        Icon(
+          cumple ? Icons.check_circle_rounded : Icons.cancel_rounded,
+          color: cumple ? const Color(0xFF10B981) : const Color(0xFFFF3B30),
+          size: 14,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          texto,
+          style: TextStyle(
+            color: cumple ? const Color(0xFF10B981) : const Color(0xFFFF3B30),
+            fontSize: 12,
+          ),
+        ),
+      ],
     );
   }
 }
