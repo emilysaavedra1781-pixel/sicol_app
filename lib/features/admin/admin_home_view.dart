@@ -15,7 +15,7 @@ class _AdminHomeViewState extends State<AdminHomeView> {
   final _db = FirebaseFirestore.instance;
   int _tabIndex = 0;
 
-  // 0=Dashboard, 1=Conductores, 2=Usuarios, 3=Viajes
+  // 0=Dashboard, 1=Conductores, 2=Usuarios, 3=Control Viajes, 4=Paraderos (RF55)
 
   Future<void> _logout() async {
     final confirm = await showDialog<bool>(
@@ -52,7 +52,7 @@ class _AdminHomeViewState extends State<AdminHomeView> {
         backgroundColor: const Color(0xFF111827),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Aprobar conductor', style: TextStyle(color: Colors.white)),
-        content: Text('¿Aprobar la cuenta de $nombre?',
+        content: Text('¿Aprobar la cuenta de $nombre después de validar físicamente sus documentos?',
             style: const TextStyle(color: Color(0xFF6B7280))),
         actions: [
           TextButton(
@@ -111,37 +111,89 @@ class _AdminHomeViewState extends State<AdminHomeView> {
     }
   }
 
+  // REQUISITO RF21: Gestión de Usuarios con Motivo de Bloqueo Obligatorio
   Future<void> _toggleUsuario(String uid, String nombre, bool bloqueado) async {
-    final accion = bloqueado ? 'habilitar' : 'bloquear';
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF111827),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('${accion[0].toUpperCase()}${accion.substring(1)} usuario',
-            style: const TextStyle(color: Colors.white)),
-        content: Text('¿Deseas $accion la cuenta de $nombre?',
-            style: const TextStyle(color: Color(0xFF6B7280))),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar', style: TextStyle(color: Color(0xFF6B7280))),
+    final txtMotivo = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    if (!bloqueado) {
+      // Flujo de Bloqueo (Requiere explicación obligatoria)
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF111827),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('Bloquear cuenta de $nombre', style: const TextStyle(color: Colors.white, fontSize: 16)),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Es obligatorio registrar el motivo de la sanción para auditoría del sistema.',
+                    style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: txtMotivo,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo del bloqueo',
+                    labelStyle: TextStyle(color: Color(0xFF6B7280)),
+                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF1F2937))),
+                    focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF1E6BFF))),
+                  ),
+                  validator: (val) => val == null || val.trim().isEmpty ? 'Ingrese un motivo válido' : null,
+                ),
+              ],
+            ),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(accion[0].toUpperCase() + accion.substring(1),
-                style: TextStyle(
-                    color: bloqueado
-                        ? const Color(0xFF10B981)
-                        : const Color(0xFFFF3B30))),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      await _db.collection('usuarios').doc(uid).update({
-        'estado': bloqueado ? 'activo' : 'bloqueado',
-      });
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar', style: TextStyle(color: Color(0xFF6B7280))),
+            ),
+            TextButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text('Confirmar Bloqueo', style: TextStyle(color: Color(0xFFFF3B30))),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm == true) {
+        await _db.collection('usuarios').doc(uid).update({
+          'estado': 'bloqueado',
+          'motivoBloqueo': txtMotivo.text.trim(),
+          'fechaBloqueo': FieldValue.serverTimestamp(),
+        });
+      }
+    } else {
+      // Flujo de Desbloqueo directo
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF111827),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Habilitar usuario', style: TextStyle(color: Colors.white)),
+          content: Text('¿Deseas restaurar el acceso activo para $nombre?', style: const TextStyle(color: Color(0xFF6B7280))),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar', style: TextStyle(color: Color(0xFF6B7280)))),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Reactivar', style: TextStyle(color: Color(0xFF10B981))),
+            ),
+          ],
+        ),
+      );
+      if (confirm == true) {
+        await _db.collection('usuarios').doc(uid).update({
+          'estado': 'activo',
+          'motivoBloqueo': FieldValue.delete(),
+        });
+      }
     }
   }
 
@@ -152,19 +204,14 @@ class _AdminHomeViewState extends State<AdminHomeView> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF111827),
         elevation: 0,
-        title: const Text('SICOL — Admin',
-            style: TextStyle(
-                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+        title: const Text('SICOL — Sistema de Control',
+            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: Color(0xFF6B7280)),
-            onPressed: _logout,
-          ),
+          IconButton(icon: const Icon(Icons.logout, color: Color(0xFF6B7280)), onPressed: _logout),
         ],
       ),
       body: Column(
         children: [
-          // ── Nav tabs ──────────────────────────────────────────────────────
           Container(
             color: const Color(0xFF111827),
             child: SingleChildScrollView(
@@ -174,7 +221,8 @@ class _AdminHomeViewState extends State<AdminHomeView> {
                   _tab(0, Icons.dashboard_rounded, 'Dashboard'),
                   _tab(1, Icons.drive_eta_rounded, 'Conductores'),
                   _tab(2, Icons.people_rounded, 'Usuarios'),
-                  _tab(3, Icons.map_rounded, 'Viajes'),
+                  _tab(3, Icons.map_rounded, 'Control Viajes'),
+                  _tab(4, Icons.add_location_alt_rounded, 'Paraderos (RF55)'),
                 ],
               ),
             ),
@@ -184,14 +232,10 @@ class _AdminHomeViewState extends State<AdminHomeView> {
               index: _tabIndex,
               children: [
                 _DashboardTab(db: _db),
-                _ConductoresTab(
-                  authService: _authService,
-                  db: _db,
-                  onAprobar: _aprobar,
-                  onRechazar: _rechazar,
-                ),
+                _ConductoresTab(authService: _authService, db: _db, onAprobar: _aprobar, onRechazar: _rechazar),
                 _UsuariosTab(db: _db, onToggle: _toggleUsuario),
                 _ViajesTab(db: _db),
+                _ParaderosTab(db: _db), // Módulo de cumplimiento RF55 añadido
               ],
             ),
           ),
@@ -207,18 +251,11 @@ class _AdminHomeViewState extends State<AdminHomeView> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: active ? const Color(0xFF1E6BFF) : Colors.transparent,
-              width: 2,
-            ),
-          ),
+          border: Border(bottom: BorderSide(color: active ? const Color(0xFF1E6BFF) : Colors.transparent, width: 2)),
         ),
         child: Row(
           children: [
-            Icon(icon,
-                size: 16,
-                color: active ? const Color(0xFF1E6BFF) : const Color(0xFF6B7280)),
+            Icon(icon, size: 16, color: active ? const Color(0xFF1E6BFF) : const Color(0xFF6B7280)),
             const SizedBox(width: 6),
             Text(label,
                 style: TextStyle(
@@ -233,26 +270,27 @@ class _AdminHomeViewState extends State<AdminHomeView> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 1: Dashboard (RF29)
+// Tab 1: Dashboard (RF29 - Métricas Diarias Automatizadas)
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _DashboardTab extends StatelessWidget {
   final FirebaseFirestore db;
   const _DashboardTab({required this.db});
 
   @override
   Widget build(BuildContext context) {
+    // Definir rangos estrictos de hoy para cumplir RF29 sin mezclar datos históricos
+    final ahora = DateTime.now();
+    final inicioHoy = DateTime(ahora.year, ahora.month, ahora.day);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Resumen del día',
-              style: TextStyle(
-                  color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+          const Text('Resumen operativo de hoy',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 16),
 
-          // ── Indicadores en tiempo real ────────────────────────────────────
           StreamBuilder<QuerySnapshot>(
             stream: db.collection('viajes').where('estado', isEqualTo: 'activo').snapshots(),
             builder: (context, snapActivos) {
@@ -260,14 +298,15 @@ class _DashboardTab extends StatelessWidget {
                 stream: db.collection('viajes').where('estado', isEqualTo: 'finalizado').snapshots(),
                 builder: (context, snapFinalizados) {
                   return StreamBuilder<QuerySnapshot>(
-                    stream: db.collection('reservas').where('estado', isEqualTo: 'confirmada').snapshots(),
+                    stream: db.collection('reservas')
+                        .where('estado', isEqualTo: 'confirmada')
+                        .where('fechaCreacion', isGreaterThanOrEqualTo: inicioHoy)
+                        .snapshots(),
                     builder: (context, snapReservas) {
-
                       final activos = snapActivos.data?.docs.length ?? 0;
                       final finalizados = snapFinalizados.data?.docs.length ?? 0;
                       final reservas = snapReservas.data?.docs ?? [];
 
-                      // Calcular ingresos totales
                       double ingresos = 0;
                       for (final r in reservas) {
                         final data = r.data() as Map<String, dynamic>;
@@ -278,45 +317,17 @@ class _DashboardTab extends StatelessWidget {
                         children: [
                           Row(
                             children: [
-                              Expanded(
-                                child: _indicador(
-                                  icon: Icons.directions_car_rounded,
-                                  label: 'Viajes activos',
-                                  valor: '$activos',
-                                  color: const Color(0xFF10B981),
-                                ),
-                              ),
+                              Expanded(child: _indicador(icon: Icons.directions_car_rounded, label: 'Colectivos en línea', valor: '$activos', color: const Color(0xFF10B981))),
                               const SizedBox(width: 12),
-                              Expanded(
-                                child: _indicador(
-                                  icon: Icons.check_circle_rounded,
-                                  label: 'Finalizados',
-                                  valor: '$finalizados',
-                                  color: const Color(0xFF1E6BFF),
-                                ),
-                              ),
+                              Expanded(child: _indicador(icon: Icons.check_circle_rounded, label: 'Viajes terminados', valor: '$finalizados', color: const Color(0xFF1E6BFF))),
                             ],
                           ),
                           const SizedBox(height: 12),
                           Row(
                             children: [
-                              Expanded(
-                                child: _indicador(
-                                  icon: Icons.people_rounded,
-                                  label: 'Pasajeros hoy',
-                                  valor: '${reservas.length}',
-                                  color: const Color(0xFFF59E0B),
-                                ),
-                              ),
+                              Expanded(child: _indicador(icon: Icons.people_rounded, label: 'Pasajeros del día', valor: '${reservas.length}', color: const Color(0xFFF59E0B))),
                               const SizedBox(width: 12),
-                              Expanded(
-                                child: _indicador(
-                                  icon: Icons.attach_money_rounded,
-                                  label: 'Ingresos',
-                                  valor: 'S/ ${ingresos.toStringAsFixed(0)}',
-                                  color: const Color(0xFF8B5CF6),
-                                ),
-                              ),
+                              Expanded(child: _indicador(icon: Icons.attach_money_rounded, label: 'Ingresos diarios', valor: 'S/ ${ingresos.toStringAsFixed(2)}', color: const Color(0xFF8B5CF6))),
                             ],
                           ),
                         ],
@@ -329,12 +340,9 @@ class _DashboardTab extends StatelessWidget {
           ),
 
           const SizedBox(height: 24),
-          const Text('Viajes activos ahora',
-              style: TextStyle(
-                  color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+          const Text('Unidades en servicio activo', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
 
-          // ── Lista viajes activos ──────────────────────────────────────────
           StreamBuilder<QuerySnapshot>(
             stream: db.collection('viajes').where('estado', isEqualTo: 'activo').snapshots(),
             builder: (context, snapshot) {
@@ -343,18 +351,12 @@ class _DashboardTab extends StatelessWidget {
                 return Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111827),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF1F2937)),
-                  ),
+                  decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF1F2937))),
                   child: const Column(
                     children: [
-                      Icon(Icons.directions_car_outlined,
-                          color: Color(0xFF374151), size: 40),
+                      Icon(Icons.directions_car_outlined, color: Color(0xFF374151), size: 40),
                       SizedBox(height: 8),
-                      Text('No hay viajes activos',
-                          style: TextStyle(color: Color(0xFF6B7280))),
+                      Text('No hay colectivos activos en Carretera Central', style: TextStyle(color: Color(0xFF6B7280))),
                     ],
                   ),
                 );
@@ -364,56 +366,35 @@ class _DashboardTab extends StatelessWidget {
                   final d = doc.data() as Map<String, dynamic>;
                   final ocupados = (d['asientosOcupados'] as num?)?.toInt() ?? 0;
                   final capacidad = (d['capacidad'] as num?)?.toInt() ?? 4;
+                  final esEspera = d['ruta'] == 'esperando';
+                  final rutaTxt = esEspera ? 'Disponible (Esperando Asignación)' : (d['rutaLabel'] ?? '-');
+
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF111827),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFF1F2937)),
-                    ),
+                    decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF1F2937))),
                     child: Row(
                       children: [
                         Container(
                           width: 40,
                           height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.directions_car_rounded,
-                              color: Color(0xFF10B981), size: 20),
+                          decoration: BoxDecoration(color: (esEspera ? const Color(0xFFF59E0B) : const Color(0xFF10B981)).withOpacity(0.15), shape: BoxShape.circle),
+                          child: Icon(Icons.directions_car_rounded, color: esEspera ? const Color(0xFFF59E0B) : const Color(0xFF10B981), size: 20),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(d['rutaLabel'] ?? '-',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600)),
-                              Text(
-                                '${d['conductorNombre'] ?? '-'} • $ocupados/$capacidad asientos',
-                                style: const TextStyle(
-                                    color: Color(0xFF6B7280), fontSize: 12),
-                              ),
+                              Text(rutaTxt, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                              Text('${d['conductorNombre'] ?? 'Conductor'} • $ocupados/$capacidad asientos', style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
                             ],
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text('Activo',
-                              style: TextStyle(
-                                  color: Color(0xFF10B981),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600)),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(color: (esEspera ? const Color(0xFFF59E0B) : const Color(0xFF10B981)).withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+                          child: Text(esEspera ? 'Espera' : 'En Ruta', style: TextStyle(color: esEspera ? const Color(0xFFF59E0B) : const Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.w600)),
                         ),
                       ],
                     ),
@@ -427,40 +408,23 @@ class _DashboardTab extends StatelessWidget {
     );
   }
 
-  Widget _indicador({
-    required IconData icon,
-    required String label,
-    required String valor,
-    required Color color,
-  }) {
+  Widget _indicador({required IconData icon, required String label, required String valor, required Color color}) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF1F2937)),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF1F2937))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 36,
             height: 36,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(10),
-            ),
+            decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
             child: Icon(icon, color: color, size: 18),
           ),
           const SizedBox(height: 12),
-          Text(valor,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700)),
+          Text(valor, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700)),
           const SizedBox(height: 2),
-          Text(label,
-              style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
+          Text(label, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
         ],
       ),
     );
@@ -468,41 +432,27 @@ class _DashboardTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 2: Conductores (RF26)
+// Tab 2: Conductores (RF26 - Auditoría y Registro)
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _ConductoresTab extends StatefulWidget {
   final AuthService authService;
   final FirebaseFirestore db;
   final Function(String, String) onAprobar;
   final Function(String, String) onRechazar;
 
-  const _ConductoresTab({
-    required this.authService,
-    required this.db,
-    required this.onAprobar,
-    required this.onRechazar,
-  });
+  const _ConductoresTab({required this.authService, required this.db, required this.onAprobar, required this.onRechazar});
 
   @override
   State<_ConductoresTab> createState() => _ConductoresTabState();
 }
 
-class _ConductoresTabState extends State<_ConductoresTab>
-    with SingleTickerProviderStateMixin {
+class _ConductoresTabState extends State<_ConductoresTab> with SingleTickerProviderStateMixin {
   late TabController _tc;
 
   @override
-  void initState() {
-    super.initState();
-    _tc = TabController(length: 2, vsync: this);
-  }
-
+  void initState() { super.initState(); _tc = TabController(length: 2, vsync: this); }
   @override
-  void dispose() {
-    _tc.dispose();
-    super.dispose();
-  }
+  void dispose() { _tc.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -515,18 +465,10 @@ class _ConductoresTabState extends State<_ConductoresTab>
             indicatorColor: const Color(0xFF1E6BFF),
             labelColor: const Color(0xFF1E6BFF),
             unselectedLabelColor: const Color(0xFF6B7280),
-            tabs: const [Tab(text: 'Pendientes'), Tab(text: 'Aprobados')],
+            tabs: const [Tab(text: 'Pendientes de Validación'), Tab(text: 'Conductores Oficiales')],
           ),
         ),
-        Expanded(
-          child: TabBarView(
-            controller: _tc,
-            children: [
-              _buildPendientes(),
-              _buildAprobados(),
-            ],
-          ),
-        ),
+        Expanded(child: TabBarView(controller: _tc, children: [_buildPendientes(), _buildAprobados()])),
       ],
     );
   }
@@ -535,31 +477,18 @@ class _ConductoresTabState extends State<_ConductoresTab>
     return StreamBuilder<QuerySnapshot>(
       stream: widget.authService.getConductoresPendientes(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
-        }
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.check_circle_outline, color: Color(0xFF10B981), size: 56),
-                SizedBox(height: 16),
-                Text('No hay conductores pendientes',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          );
+          return const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.check_circle_outline, color: Color(0xFF10B981), size: 56), SizedBox(height: 16), Text('Todos los conductores validados', style: TextStyle(color: Colors.white, fontSize: 15))]));
         }
         return ListView.builder(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           itemCount: docs.length,
           itemBuilder: (context, i) {
             final data = docs[i].data() as Map<String, dynamic>;
-            final uid = docs[i].id;
             final nombre = '${data['nombre'] ?? ''} ${data['apellido'] ?? ''}';
-            return _conductorCard(data, uid, pendiente: true, nombre: nombre);
+            return _conductorCard(data, docs[i].id, pendiente: true, nombre: nombre);
           },
         );
       },
@@ -568,192 +497,82 @@ class _ConductoresTabState extends State<_ConductoresTab>
 
   Widget _buildAprobados() {
     return StreamBuilder<QuerySnapshot>(
-      stream: widget.db
-          .collection('usuarios')
-          .where('rol', isEqualTo: 'conductor')
-          .where('estado', isEqualTo: 'activo')
-          .snapshots(),
+      stream: widget.db.collection('usuarios').where('rol', isEqualTo: 'conductor').where('estado', isEqualTo: 'activo').snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
-        }
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
         final docs = snapshot.data?.docs ?? [];
-        if (docs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.drive_eta_outlined, color: Color(0xFF6B7280), size: 56),
-                SizedBox(height: 16),
-                Text('No hay conductores aprobados',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          );
-        }
+        if (docs.isEmpty) return const Center(child: Text('No hay conductores activos', style: TextStyle(color: Color(0xFF6B7280))));
         return ListView.builder(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           itemCount: docs.length,
           itemBuilder: (context, i) {
             final data = docs[i].data() as Map<String, dynamic>;
-            final uid = docs[i].id;
             final nombre = '${data['nombre'] ?? ''} ${data['apellido'] ?? ''}';
-            return _conductorCard(data, uid, pendiente: false, nombre: nombre);
+            return _conductorCard(data, docs[i].id, pendiente: false, nombre: nombre);
           },
         );
       },
     );
   }
 
-  Widget _conductorCard(Map<String, dynamic> data, String uid,
-      {required bool pendiente, required String nombre}) {
+  Widget _conductorCard(Map<String, dynamic> data, String uid, {required bool pendiente, required String nombre}) {
     final vehiculo = (data['vehiculo'] as Map?)?.cast<String, dynamic>() ?? {};
-    final codigo = data['codigoConductor'];
-
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF1F2937)),
-      ),
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF1F2937))),
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: pendiente
-                  ? const Color(0xFFF59E0B).withValues(alpha: 0.08)
-                  : const Color(0xFF10B981).withValues(alpha: 0.08),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            ),
+            padding: const EdgeInsets.all(12),
+            color: pendiente ? const Color(0xFFF59E0B).withOpacity(0.05) : const Color(0xFF10B981).withOpacity(0.05),
             child: Row(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: pendiente
-                        ? const Color(0xFFF59E0B).withValues(alpha: 0.2)
-                        : const Color(0xFF10B981).withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.person,
-                      color: pendiente
-                          ? const Color(0xFFF59E0B)
-                          : const Color(0xFF10B981),
-                      size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(nombre,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600)),
-                      Text(
-                        pendiente
-                            ? 'Pendiente de aprobación'
-                            : 'Código: ${codigo ?? '-'}',
-                        style: TextStyle(
-                            color: pendiente
-                                ? const Color(0xFFF59E0B)
-                                : const Color(0xFF10B981),
-                            fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
+                Icon(Icons.person, color: pendiente ? const Color(0xFFF59E0B) : const Color(0xFF10B981)),
+                const SizedBox(width: 10),
+                Expanded(child: Text(nombre, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                Text(pendiente ? 'POR REVISAR' : 'CÓDIGO: ${data['codigoConductor'] ?? '-'}', style: TextStyle(color: pendiente ? const Color(0xFFF59E0B) : const Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold)),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             child: Column(
               children: [
-                _infoRow(Icons.badge_outlined, 'DNI', data['dni'] ?? '-'),
-                _infoRow(Icons.phone_outlined, 'Celular', data['celular'] ?? '-'),
-                _infoRow(Icons.card_membership_outlined, 'Licencia',
-                    data['numeroLicencia'] ?? '-'),
-                _infoRow(Icons.directions_car_outlined, 'Placa',
-                    vehiculo['placa'] ?? '-'),
-                _infoRow(Icons.directions_car_outlined, 'Vehículo',
-                    '${vehiculo['marca'] ?? ''} ${vehiculo['modelo'] ?? ''}'),
-                _infoRow(Icons.people_outline, 'Capacidad',
-                    '${vehiculo['capacidad'] ?? '-'} pasajeros'),
+                _infoRow(Icons.badge, 'DNI', data['dni'] ?? '-'),
+                _infoRow(Icons.phone, 'Celular', data['celular'] ?? '-'),
+                _infoRow(Icons.card_membership, 'N° Licencia', data['numeroLicencia'] ?? '-'),
+                _infoRow(Icons.directions_car, 'Placa Vehicular', vehiculo['placa'] ?? '-'),
+                _infoRow(Icons.commute, 'Modelo', '${vehiculo['marca'] ?? ''} ${vehiculo['modelo'] ?? ''}'),
               ],
             ),
           ),
           if (pendiente)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
               child: Row(
                 children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => widget.onRechazar(uid, nombre),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFFF3B30),
-                        side: const BorderSide(color: Color(0xFFFF3B30)),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: const Text('Rechazar',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                  ),
+                  Expanded(child: OutlinedButton(onPressed: () => widget.onRechazar(uid, nombre), style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFFF3B30), side: const BorderSide(color: Color(0xFFFF3B30))), child: const Text('Rechazar'))),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => widget.onAprobar(uid, nombre),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10B981),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: const Text('Aprobar',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                  ),
+                  Expanded(child: ElevatedButton(onPressed: () => widget.onAprobar(uid, nombre), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white), child: const Text('Validar e Inscribir'))),
                 ],
               ),
-            ),
+            )
         ],
       ),
     );
   }
 
-  Widget _infoRow(IconData icon, String label, String value) {
+  Widget _infoRow(IconData icon, String label, String val) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(icon, color: const Color(0xFF6B7280), size: 16),
-          const SizedBox(width: 10),
-          Text('$label: ',
-              style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-          Expanded(
-            child: Text(value,
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(children: [Icon(icon, color: const Color(0xFF6B7280), size: 14), const SizedBox(width: 8), Text('$label: ', style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)), Expanded(child: Text(val, style: const TextStyle(color: Colors.white, fontSize: 13)))]),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 3: Gestión de usuarios (RF21)
+// Tab 3: Gestión de Usuarios (RF21 - Buscador por Filtros de Entrada Coincidente)
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _UsuariosTab extends StatefulWidget {
   final FirebaseFirestore db;
   final Function(String, String, bool) onToggle;
@@ -764,129 +583,102 @@ class _UsuariosTab extends StatefulWidget {
 }
 
 class _UsuariosTabState extends State<_UsuariosTab> {
-  String _filtro = 'todos'; // todos, pasajero, conductor
+  String _filtroRol = 'todos';
+  String _queryBuscador = '';
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Filtros
         Container(
           color: const Color(0xFF111827),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
+          padding: const EdgeInsets.all(12),
+          child: Column(
             children: [
-              _filtroChip('todos', 'Todos'),
-              const SizedBox(width: 8),
-              _filtroChip('pasajero', 'Pasajeros'),
-              const SizedBox(width: 8),
-              _filtroChip('conductor', 'Conductores'),
+              TextField(
+                onChanged: (v) => setState(() => _queryBuscador = v.trim().toLowerCase()),
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Buscar usuario por DNI o Nombre...',
+                  hintStyle: const TextStyle(color: Color(0xFF4B5563)),
+                  prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
+                  filled: true,
+                  fillColor: const Color(0xFF0A0E1A),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _chip('todos', 'Todos'),
+                  const SizedBox(width: 6),
+                  _chip('pasajero', 'Pasajeros'),
+                  const SizedBox(width: 6),
+                  _chip('conductor', 'Conductores'),
+                ],
+              )
             ],
           ),
         ),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: _filtro == 'todos'
+            stream: _filtroRol == 'todos'
                 ? widget.db.collection('usuarios').snapshots()
-                : widget.db
-                .collection('usuarios')
-                .where('rol', isEqualTo: _filtro)
-                .snapshots(),
+                : widget.db.collection('usuarios').where('rol', isEqualTo: _filtroRol).snapshots(),
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
+              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
+              var docs = snapshot.data?.docs ?? [];
+
+              // Filtrar localmente por Nombre o DNI en tiempo real
+              if (_queryBuscador.isNotEmpty) {
+                docs = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final nom = '${data['nombre'] ?? ''} ${data['apellido'] ?? ''}'.toLowerCase();
+                  final dni = (data['dni'] ?? '').toString().toLowerCase();
+                  return nom.contains(_queryBuscador) || dni.contains(_queryBuscador);
+                }).toList();
               }
-              final docs = snapshot.data?.docs ?? [];
-              if (docs.isEmpty) {
-                return const Center(
-                  child: Text('No hay usuarios',
-                      style: TextStyle(color: Color(0xFF6B7280))),
-                );
-              }
+
+              if (docs.isEmpty) return const Center(child: Text('No se encontraron usuarios', style: TextStyle(color: Color(0xFF6B7280))));
+
               return ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 itemCount: docs.length,
                 itemBuilder: (context, i) {
                   final data = docs[i].data() as Map<String, dynamic>;
                   final uid = docs[i].id;
-                  final nombre =
-                  '${data['nombre'] ?? ''} ${data['apellido'] ?? ''}'.trim();
+                  final nombre = '${data['nombre'] ?? ''} ${data['apellido'] ?? ''}'.trim();
                   final rol = data['rol'] ?? 'pasajero';
                   final estado = data['estado'] ?? 'activo';
                   final bloqueado = estado == 'bloqueado';
 
                   return Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF111827),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFF1F2937)),
-                    ),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF1F2937))),
                     child: Row(
                       children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: (rol == 'conductor'
-                                ? const Color(0xFF1E6BFF)
-                                : const Color(0xFF8B5CF6))
-                                .withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            rol == 'conductor'
-                                ? Icons.drive_eta_rounded
-                                : Icons.person_rounded,
-                            color: rol == 'conductor'
-                                ? const Color(0xFF1E6BFF)
-                                : const Color(0xFF8B5CF6),
-                            size: 20,
-                          ),
-                        ),
+                        Icon(rol == 'conductor' ? Icons.drive_eta : Icons.person, color: rol == 'conductor' ? const Color(0xFF1E6BFF) : const Color(0xFF8B5CF6)),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(nombre.isEmpty ? 'Sin nombre' : nombre,
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600)),
-                              Text(
-                                '${rol[0].toUpperCase()}${rol.substring(1)} • ${data['celular'] ?? '-'}',
-                                style: const TextStyle(
-                                    color: Color(0xFF6B7280), fontSize: 12),
-                              ),
+                              Text(nombre, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                              Text('DNI: ${data['dni'] ?? '-'} • Cel: ${data['celular'] ?? '-'}', style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
+                              if (bloqueado)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('Motivo: ${data['motivoBloqueo'] ?? 'No especificado'}', style: const TextStyle(color: Color(0xFFFF3B30), fontSize: 11, fontStyle: FontStyle.italic)),
+                                )
                             ],
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () => widget.onToggle(uid, nombre, bloqueado),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: (bloqueado
-                                  ? const Color(0xFFFF3B30)
-                                  : const Color(0xFF10B981))
-                                  .withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              bloqueado ? 'Bloqueado' : 'Activo',
-                              style: TextStyle(
-                                  color: bloqueado
-                                      ? const Color(0xFFFF3B30)
-                                      : const Color(0xFF10B981),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ),
+                        IconButton(
+                          icon: Icon(bloqueado ? Icons.lock_open : Icons.lock, color: bloqueado ? const Color(0xFF10B981) : const Color(0xFFFF3B30)),
+                          onPressed: () => widget.onToggle(uid, nombre, bloqueado),
+                        )
                       ],
                     ),
                   );
@@ -894,207 +686,96 @@ class _UsuariosTabState extends State<_UsuariosTab> {
               );
             },
           ),
-        ),
+        )
       ],
     );
   }
 
-  Widget _filtroChip(String value, String label) {
-    final active = _filtro == value;
+  Widget _chip(String v, String l) {
+    final active = _filtroRol == v;
     return GestureDetector(
-      onTap: () => setState(() => _filtro = value),
+      onTap: () => setState(() => _filtroRol = v),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: active
-              ? const Color(0xFF1E6BFF).withValues(alpha: 0.15)
-              : const Color(0xFF1F2937),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-              color: active ? const Color(0xFF1E6BFF) : Colors.transparent),
-        ),
-        child: Text(label,
-            style: TextStyle(
-                color: active ? const Color(0xFF1E6BFF) : const Color(0xFF6B7280),
-                fontSize: 13,
-                fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(color: active ? const Color(0xFF1E6BFF) : const Color(0xFF1F2937), borderRadius: BorderRadius.circular(20)),
+        child: Text(l, style: TextStyle(color: active ? Colors.white : const Color(0xFF6B7280), fontSize: 12)),
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 4: Monitoreo de viajes (RF22)
+// Tab 4: Control Operativo Remoto de Viajes (Contingencia Administrativa)
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _ViajesTab extends StatelessWidget {
   final FirebaseFirestore db;
   const _ViajesTab({required this.db});
 
+  Future<void> _liberarUnidadRetrasada(BuildContext context, String viajeId, String conductor) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF111827),
+        title: const Text('Forzar Cierre de Viaje', style: TextStyle(color: Colors.white)),
+        content: Text('¿Deseas liberar de forma remota el vehículo de $conductor debido a un retraso prolongado o bloqueo operativo?', style: const TextStyle(color: Color(0xFF6B7280))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF3B30)), child: const Text('Liberar Unidad')),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await db.collection('viajes').doc(viajeId).update({
+        'estado': 'finalizado',
+        'forzadoPorAdmin': true,
+        'fechaFinalizacion': FieldValue.serverTimestamp(),
+      });
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unidad liberada en la red distributiva.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: db
-          .collection('viajes')
-          .where('estado', isEqualTo: 'activo')
-          .snapshots(),
+      stream: db.collection('viajes').where('estado', isEqualTo: 'activo').snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
-        }
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
         final docs = snapshot.data?.docs ?? [];
-        if (docs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.map_outlined, color: Color(0xFF374151), size: 56),
-                SizedBox(height: 16),
-                Text('No hay viajes activos',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600)),
-                SizedBox(height: 8),
-                Text('Los viajes en curso aparecerán aquí',
-                    style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-              ],
-            ),
-          );
-        }
+        if (docs.isEmpty) return const Center(child: Text('No hay operaciones activas en este momento', style: TextStyle(color: Color(0xFF6B7280))));
+
         return ListView.builder(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           itemCount: docs.length,
           itemBuilder: (context, i) {
-            final data = docs[i].data() as Map<String, dynamic>;
-            final vehiculo =
-                (data['vehiculo'] as Map?)?.cast<String, dynamic>() ?? {};
-            final ocupados = (data['asientosOcupados'] as num?)?.toInt() ?? 0;
-            final capacidad = (data['capacidad'] as num?)?.toInt() ?? 4;
-            final asientos =
-                (data['asientos'] as Map?)?.cast<String, dynamic>() ?? {};
-
+            final d = docs[i].data() as Map<String, dynamic>;
+            final conductor = d['conductorNombre'] ?? 'Conductor';
             return Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF111827),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF1F2937)),
-              ),
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF1F2937))),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.08),
-                      borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(16)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.directions_car_rounded,
-                              color: Color(0xFF10B981), size: 20),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(data['rutaLabel'] ?? '-',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600)),
-                              Text(data['conductorNombre'] ?? '-',
-                                  style: const TextStyle(
-                                      color: Color(0xFF6B7280), fontSize: 12)),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text('En curso',
-                              style: TextStyle(
-                                  color: Color(0xFF10B981),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                      ],
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(conductor, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        Text('Ruta: ${d['ruta'] == 'esperando' ? 'Disponible en Espera' : (d['rutaLabel'] ?? '-')}', style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
+                      ]),
+                      Text('${d['asientosOcupados'] ?? 0}/${d['capacidad'] ?? 4} Asientos', style: const TextStyle(color: Color(0xFF1E6BFF), fontWeight: FontWeight.bold)),
+                    ],
                   ),
-                  // Info
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            _chip(Icons.directions_car_outlined,
-                                vehiculo['placa'] ?? '-'),
-                            const SizedBox(width: 8),
-                            _chip(Icons.people_outline,
-                                '$ocupados/$capacidad pasajeros'),
-                            const SizedBox(width: 8),
-                            _chip(Icons.attach_money_rounded,
-                                'S/ ${(data['ingresoTotal'] as num?)?.toInt() ?? 0}'),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        // Mini grid asientos
-                        const Text('Asientos',
-                            style: TextStyle(
-                                color: Color(0xFF6B7280), fontSize: 12)),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: List.generate(capacidad, (idx) {
-                            final key = 'asiento_${idx + 1}';
-                            final asiento = (asientos[key] as Map?)
-                                ?.cast<String, dynamic>() ??
-                                {};
-                            final estado = asiento['estado'] ?? 'libre';
-                            final color = estado == 'ocupado'
-                                ? const Color(0xFF1E6BFF)
-                                : const Color(0xFF10B981);
-                            return Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: color.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color: color.withValues(alpha: 0.4)),
-                              ),
-                              child: Center(
-                                child: Text('${idx + 1}',
-                                    style: TextStyle(
-                                        color: color,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700)),
-                              ),
-                            );
-                          }),
-                        ),
-                      ],
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _liberarUnidadRetrasada(context, docs[i].id, conductor),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF3B30).withOpacity(0.1), foregroundColor: const Color(0xFFFF3B30), elevation: 0),
+                      icon: const Icon(Icons.flash_on, size: 14),
+                      label: const Text('Forzar Arranque / Liberar por Retraso'),
                     ),
-                  ),
+                  )
                 ],
               ),
             );
@@ -1103,24 +784,209 @@ class _ViajesTab extends StatelessWidget {
       },
     );
   }
+}
 
-  Widget _chip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1F2937),
-        borderRadius: BorderRadius.circular(8),
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab 5: Gestión de Paraderos (CUMPLIMIENTO COMPLETO REQUISITO MANDATORIO RF55)
+// ─────────────────────────────────────────────────────────────────────────────
+class _ParaderosTab extends StatefulWidget {
+  final FirebaseFirestore db;
+  const _ParaderosTab({required this.db});
+
+  @override
+  State<_ParaderosTab> createState() => _ParaderosTabState();
+}
+
+class _ParaderosTabState extends State<_ParaderosTab> {
+  String _rutaSeleccionada = 'Chosica a Lima'; // Únicas dos rutas fijas permitidas por negocio
+  final _txtNombre = TextEditingController();
+  final _txtReferencia = TextEditingController();
+  final _txtOrden = TextEditingController();
+
+  Future<void> _guardarParadero({String? docId, int? paraderosActivosCount, bool? currentStatus}) async {
+    final nombre = _txtNombre.text.trim();
+    final referencia = _txtReferencia.text.trim();
+    final orden = int.tryParse(_txtOrden.text.trim()) ?? 1;
+
+    if (nombre.isEmpty || referencia.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ Complete todos los campos requeridos.')));
+      return;
+    }
+
+    if (docId == null) {
+      // EXCEPCIÓN EA01: Validar duplicidad de nombre en la misma ruta antes de escribir
+      final duplicado = await widget.db.collection('paraderos')
+          .where('rutaId', isEqualTo: _rutaSeleccionada)
+          .where('nombre', isEqualTo: nombre)
+          .get();
+
+      if (duplicado.docs.isNotEmpty) {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF111827),
+            title: const Text('Registro Denegado (EA01)', style: TextStyle(color: Colors.white)),
+            content: Text('El paradero "$nombre" ya existe mapeado en la ruta $_rutaSeleccionada.', style: const TextStyle(color: Color(0xFF6B7280))),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido'))],
+          ),
+        );
+        return;
+      }
+
+      // Guardar Paradero Nuevo
+      await widget.db.collection('paraderos').add({
+        'nombre': nombre,
+        'referencia': referencia,
+        'orden': orden,
+        'rutaId': _rutaSeleccionada,
+        'activo': true,
+      });
+    } else {
+      // Editar existente
+      await widget.db.collection('paraderos').doc(docId).update({
+        'nombre': nombre,
+        'referencia': referencia,
+        'orden': orden,
+      });
+    }
+
+    _txtNombre.clear(); _txtReferencia.clear(); _txtOrden.clear();
+    if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _toggleEstadoParadero(String id, bool actual, int activosCount) async {
+    // EXCEPCIÓN EA02: Evitar apagar el único paradero que mantiene viva la ruta
+    if (actual == true && activosCount <= 1) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF111827),
+          title: const Text('Acción Bloqueada (EA02)', style: TextStyle(color: Colors.white)),
+          content: const Text('Cada ruta fija debe contar con al menos un paradero activo en todo momento para los pasajeros.', style: TextStyle(color: Color(0xFF6B7280))),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido'))],
+        ),
+      );
+      return;
+    }
+
+    await widget.db.collection('paraderos').doc(id).update({'activo': !actual});
+  }
+
+  void _abrirFormulario({String? docId, String? nom, String? ref, int? ord}) {
+    if (docId != null) {
+      _txtNombre.text = nom ?? '';
+      _txtReferencia.text = ref ?? '';
+      _txtOrden.text = ord?.toString() ?? '1';
+    } else {
+      _txtNombre.clear(); _txtReferencia.clear(); _txtOrden.clear();
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF111827),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(docId == null ? 'Nuevo Paradero en Ruta' : 'Modificar Paradero', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 14),
+            TextField(controller: _txtNombre, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'Nombre del punto (ej: Ovalo Santa Anita)', labelStyle: TextStyle(color: Color(0xFF6B7280)))),
+            TextField(controller: _txtReferencia, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'Referencia visual', labelStyle: TextStyle(color: Color(0xFF6B7280)))),
+            TextField(controller: _txtOrden, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'N° de Posición de Secuencia (Orden)', labelStyle: TextStyle(color: Color(0xFF6B7280)))),
+            const SizedBox(height: 20),
+            SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => _guardarParadero(docId: docId), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E6BFF)), child: const Text('Guardar Paradero Fijo'))),
+          ],
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: const Color(0xFF6B7280), size: 12),
-          const SizedBox(width: 4),
-          Text(label,
-              style:
-              const TextStyle(color: Color(0xFF9CA3AF), fontSize: 11)),
-        ],
-      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          color: const Color(0xFF111827),
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ChoiceChip(label: const Text('Chosica → Lima'), selected: _rutaSeleccionada == 'Chosica a Lima', onSelected: (s) => setState(() => _rutaSeleccionada = 'Chosica a Lima')),
+              const SizedBox(width: 12),
+              ChoiceChip(label: const Text('Lima → Chosica'), selected: _rutaSeleccionada == 'Lima a Chosica', onSelected: (s) => setState(() => _rutaSeleccionada = 'Lima a Chosica')),
+            ],
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: widget.db.collection('paraderos').where('rutaId', isEqualTo: _rutaSeleccionada).snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+              final docs = snapshot.data?.docs ?? [];
+
+              // Calcular cuántos quedan activos actualmente en la ruta seleccionada para la regla de negocio
+              final activosCount = docs.where((doc) => (doc.data() as Map<String, dynamic>)['activo'] == true).length;
+
+              // Ordenar localmente por el índice de posición numérico asignado
+              final listaOrdenada = docs.toList()..sort((a, b) {
+                final ordA = (a.data() as Map<String, dynamic>)['orden'] ?? 99;
+                final ordB = (b.data() as Map<String, dynamic>)['orden'] ?? 99;
+                return ordA.compareTo(ordB);
+              });
+
+              if (listaOrdenada.isEmpty) return const Center(child: Text('Ningún paradero registrado en este tramo.', style: TextStyle(color: Color(0xFF6B7280))));
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(14),
+                itemCount: listaOrdenada.length,
+                itemBuilder: (context, i) {
+                  final doc = listaOrdenada[i];
+                  final d = doc.data() as Map<String, dynamic>;
+                  final activo = d['activo'] ?? true;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111827),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: activo ? const Color(0xFF1F2937) : const Color(0xFFFF3B30).withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(backgroundColor: activo ? const Color(0xFF1E6BFF).withOpacity(0.2) : const Color(0xFF374151), radius: 16, child: Text('${d['orden'] ?? i}', style: TextStyle(color: activo ? const Color(0xFF1E6BFF) : Colors.grey, fontSize: 12, fontWeight: FontWeight.bold))),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(d['nombre'] ?? '-', style: TextStyle(color: activo ? Colors.white : Colors.grey, fontWeight: FontWeight.w600, decoration: activo ? TextDecoration.none : TextDecoration.lineThrough)),
+                            Text('Ref: ${d['referencia'] ?? '-'}', style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
+                          ]),
+                        ),
+                        IconButton(icon: const Icon(Icons.edit, color: Color(0xFF6B7280), size: 18), onPressed: () => _abrirFormulario(docId: doc.id, nom: d['nombre'], ref: d['referencia'], ord: d['orden'])),
+                        IconButton(
+                          icon: Icon(activo ? Icons.visibility : Icons.visibility_off, color: activo ? const Color(0xFF10B981) : const Color(0xFFFF3B30)),
+                          onPressed: () => _toggleEstadoParadero(doc.id, activo, activosCount),
+                        )
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(12),
+          color: const Color(0xFF111827),
+          width: double.infinity,
+          child: ElevatedButton.icon(onPressed: () => _abrirFormulario(), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E6BFF)), icon: const Icon(Icons.add), label: const Text('Agregar Nuevo Paradero Fijo')),
+        )
+      ],
     );
   }
 }

@@ -54,86 +54,11 @@ class _DriverHomeViewState extends State<DriverHomeView> {
     }
   }
 
-  Future<void> _mostrarDialogoIniciarViaje(
-      Map<String, dynamic> conductorData) async {
-    String? rutaSeleccionada;
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setStateDialog) => AlertDialog(
-          backgroundColor: const Color(0xFF111827),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
-          title: const Text('Iniciar viaje',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Selecciona la ruta:',
-                  style:
-                  TextStyle(color: Color(0xFF6B7280), fontSize: 14)),
-              const SizedBox(height: 16),
-              _rutaOption(
-                ctx: ctx,
-                ruta: 'chosica_lima',
-                label: 'Chosica → Lima',
-                icon: Icons.arrow_forward_rounded,
-                seleccionada: rutaSeleccionada,
-                onTap: () => setStateDialog(
-                        () => rutaSeleccionada = 'chosica_lima'),
-              ),
-              const SizedBox(height: 10),
-              _rutaOption(
-                ctx: ctx,
-                ruta: 'lima_chosica',
-                label: 'Lima → Chosica',
-                icon: Icons.arrow_back_rounded,
-                seleccionada: rutaSeleccionada,
-                onTap: () => setStateDialog(
-                        () => rutaSeleccionada = 'lima_chosica'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar',
-                  style: TextStyle(color: Color(0xFF6B7280))),
-            ),
-            ElevatedButton(
-              onPressed: rutaSeleccionada == null
-                  ? null
-                  : () {
-                Navigator.pop(ctx);
-                _iniciarViaje(conductorData, rutaSeleccionada!);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E6BFF),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
-              ),
-              child: const Text('Iniciar',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _iniciarViaje(
-      Map<String, dynamic> conductorData, String ruta) async {
+  // ✅ Sin diálogo de ruta — solo inicia directo
+  Future<void> _iniciarViaje(Map<String, dynamic> conductorData) async {
     setState(() => _iniciando = true);
     try {
       final viajeId = await _tripService.iniciarViaje(
-        ruta: ruta,
         conductorData: conductorData,
       );
       if (!mounted) return;
@@ -153,8 +78,8 @@ class _DriverHomeViewState extends State<DriverHomeView> {
             content: Text(e.toString()),
             backgroundColor: const Color(0xFFFF3B30),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       }
@@ -207,8 +132,7 @@ class _DriverHomeViewState extends State<DriverHomeView> {
             );
           }
 
-          final data =
-          snapshot.data!.data() as Map<String, dynamic>;
+          final data = snapshot.data!.data() as Map<String, dynamic>;
           final nombre = data['nombre'] ?? '';
           final apellido = data['apellido'] ?? '';
           final codigo = data['codigoConductor'] ?? '-';
@@ -220,9 +144,8 @@ class _DriverHomeViewState extends State<DriverHomeView> {
             builder: (context, tripSnap) {
               final tieneViajeActivo = tripSnap.hasData &&
                   tripSnap.data!.docs.isNotEmpty;
-              final viajeDoc = tieneViajeActivo
-                  ? tripSnap.data!.docs.first
-                  : null;
+              final viajeDoc =
+              tieneViajeActivo ? tripSnap.data!.docs.first : null;
 
               return SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(
@@ -230,7 +153,7 @@ class _DriverHomeViewState extends State<DriverHomeView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Bienvenida
+                    // ── Bienvenida ──────────────────────────────────
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(24),
@@ -269,22 +192,22 @@ class _DriverHomeViewState extends State<DriverHomeView> {
                     ),
                     const SizedBox(height: 24),
 
-                    // ── VIAJE ACTIVO o BOTÓN INICIAR ─────────────────
+                    // ── Viaje activo o botón iniciar ────────────────
                     tieneViajeActivo
                         ? _viajeActivoBanner(viajeDoc!, data)
                         : _botonIniciarViaje(data),
 
                     const SizedBox(height: 16),
 
-                    // Código de conductor
+                    // ── Código conductor ─────────────────────────────
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: const Color(0xFF111827),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                            color: const Color(0xFF1F2937)),
+                        border:
+                        Border.all(color: const Color(0xFF1F2937)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,30 +238,30 @@ class _DriverHomeViewState extends State<DriverHomeView> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Info personal
+                    // ── Datos personales ─────────────────────────────
                     _infoCard(
                       titulo: 'Datos personales',
                       items: [
                         _InfoItem(Icons.person_outline, 'Nombre',
                             '$nombre $apellido'),
-                        _InfoItem(Icons.badge_outlined, 'DNI',
-                            data['dni'] ?? '-'),
+                        _InfoItem(
+                            Icons.badge_outlined, 'DNI', data['dni'] ?? '-'),
                         _InfoItem(Icons.phone_outlined, 'Celular',
                             data['celular'] ?? '-'),
                         _InfoItem(Icons.card_membership_outlined,
-                            'Licencia',
-                            data['numeroLicencia'] ?? '-'),
+                            'Licencia', data['numeroLicencia'] ?? '-'),
                       ],
                     ),
                     const SizedBox(height: 16),
 
-                    // Info vehículo
+                    // ── Vehículo ─────────────────────────────────────
                     _infoCard(
                       titulo: 'Mi vehículo',
                       items: [
                         _InfoItem(Icons.directions_car_outlined, 'Placa',
                             vehiculo['placa'] ?? '-'),
-                        _InfoItem(Icons.directions_car_outlined,
+                        _InfoItem(
+                            Icons.directions_car_outlined,
                             'Vehículo',
                             '${vehiculo['marca'] ?? ''} ${vehiculo['modelo'] ?? ''}'),
                         _InfoItem(Icons.color_lens_outlined, 'Color',
@@ -363,14 +286,12 @@ class _DriverHomeViewState extends State<DriverHomeView> {
       width: double.infinity,
       height: 56,
       child: ElevatedButton.icon(
-        onPressed: _iniciando
-            ? null
-            : () => _mostrarDialogoIniciarViaje(conductorData),
+        onPressed: _iniciando ? null : () => _iniciarViaje(conductorData),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF10B981),
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: 0,
         ),
         icon: _iniciando
@@ -381,9 +302,8 @@ class _DriverHomeViewState extends State<DriverHomeView> {
                 color: Colors.white, strokeWidth: 2.5))
             : const Icon(Icons.play_circle_outline_rounded, size: 24),
         label: Text(
-          _iniciando ? 'Iniciando...' : 'Iniciar nuevo viaje',
-          style: const TextStyle(
-              fontSize: 16, fontWeight: FontWeight.w600),
+          _iniciando ? 'Iniciando...' : 'Poner colectivo disponible',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
     );
@@ -392,9 +312,11 @@ class _DriverHomeViewState extends State<DriverHomeView> {
   Widget _viajeActivoBanner(
       DocumentSnapshot viajeDoc, Map<String, dynamic> conductorData) {
     final viaje = viajeDoc.data() as Map<String, dynamic>;
-    final rutaLabel = viaje['rutaLabel'] ?? '';
+    final rutaLabel = viaje['rutaLabel'] ?? 'Sin ruta asignada';
     final asientosOcupados = viaje['asientosOcupados'] ?? 0;
     final capacidad = viaje['capacidad'] ?? 4;
+    final estado = viaje['estado'] ?? 'activo';
+    final enCamino = estado == 'en_camino';
 
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -410,9 +332,16 @@ class _DriverHomeViewState extends State<DriverHomeView> {
         width: double.infinity,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: const Color(0xFF10B981).withOpacity(0.1),
+          color: (enCamino
+              ? const Color(0xFF1E6BFF)
+              : const Color(0xFF10B981))
+              .withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
+          border: Border.all(
+              color: (enCamino
+                  ? const Color(0xFF1E6BFF)
+                  : const Color(0xFF10B981))
+                  .withValues(alpha: 0.4)),
         ),
         child: Row(
           children: [
@@ -420,86 +349,55 @@ class _DriverHomeViewState extends State<DriverHomeView> {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: const Color(0xFF10B981).withOpacity(0.2),
+                color: (enCamino
+                    ? const Color(0xFF1E6BFF)
+                    : const Color(0xFF10B981))
+                    .withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.directions_car_rounded,
-                  color: Color(0xFF10B981), size: 24),
+              child: Icon(
+                enCamino
+                    ? Icons.directions_car_rounded
+                    : Icons.hourglass_top_rounded,
+                color: enCamino
+                    ? const Color(0xFF1E6BFF)
+                    : const Color(0xFF10B981),
+                size: 24,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Viaje en curso',
-                      style: TextStyle(
-                          color: Color(0xFF10B981),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
+                  Text(
+                    enCamino ? 'En camino' : 'Esperando pasajeros',
+                    style: TextStyle(
+                        color: enCamino
+                            ? const Color(0xFF1E6BFF)
+                            : const Color(0xFF10B981),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 2),
-                  Text(rutaLabel,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700)),
+                  Text(
+                    rutaLabel,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700),
+                  ),
                   Text('$asientosOcupados/$capacidad asientos',
                       style: const TextStyle(
                           color: Color(0xFF6B7280), fontSize: 12)),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios_rounded,
-                color: Color(0xFF10B981), size: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _rutaOption({
-    required BuildContext ctx,
-    required String ruta,
-    required String label,
-    required IconData icon,
-    required String? seleccionada,
-    required VoidCallback onTap,
-  }) {
-    final selected = seleccionada == ruta;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFF1E6BFF).withOpacity(0.15)
-              : const Color(0xFF1F2937).withOpacity(0.5),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected
-                ? const Color(0xFF1E6BFF)
-                : const Color(0xFF1F2937),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon,
-                color: selected
+            Icon(Icons.arrow_forward_ios_rounded,
+                color: enCamino
                     ? const Color(0xFF1E6BFF)
-                    : const Color(0xFF6B7280),
-                size: 20),
-            const SizedBox(width: 10),
-            Text(label,
-                style: TextStyle(
-                    color: selected ? Colors.white : const Color(0xFF6B7280),
-                    fontSize: 15,
-                    fontWeight: selected
-                        ? FontWeight.w600
-                        : FontWeight.normal)),
-            const Spacer(),
-            if (selected)
-              const Icon(Icons.check_circle_rounded,
-                  color: Color(0xFF1E6BFF), size: 20),
+                    : const Color(0xFF10B981),
+                size: 16),
           ],
         ),
       ),
