@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/auth_service.dart';
 import '../../passenger/passenger_home_view.dart';
 import '../../driver/driver_pending_view.dart';
+import 'package:sicol_app/main.dart';
 
 class OtpVerificationView extends StatefulWidget {
   final String verificationId;
@@ -162,6 +163,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
           marca: widget.userData['marca'],
           color: widget.userData['color'],
         );
+        print('UID después del registro conductor: ${FirebaseAuth.instance.currentUser?.uid}');
       } else {
         await _authService.registerPasajero(
           dni: widget.userData['dni'],
@@ -171,6 +173,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
           password: widget.userData['password'],
           fechaNacimiento: widget.userData['fechaNacimiento'],
         );
+        print('UID después del registro pasajero: ${FirebaseAuth.instance.currentUser?.uid}');
       }
 
       if (!mounted) return;
@@ -187,16 +190,14 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
         ),
       );
 
-      // Redirigir según rol
-      final destino = rol == 'conductor'
-          ? const DriverPendingView()
-          : const PassengerHomeView();
+      // DESPUÉS - dejar que AuthGate navegue solo
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+              (route) => false,
+        );
+      }
 
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => destino),
-            (route) => false,
-      );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       _intentosFallidos++;

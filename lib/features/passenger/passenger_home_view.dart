@@ -58,35 +58,49 @@ class _PassengerHomeViewState extends State<PassengerHomeView> {
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final uid = _auth.currentUser?.uid ?? '';
+    return StreamBuilder<User?>(
+      stream: _auth.authStateChanges(),
+      builder: (context, snapshot) {
+        final uid = snapshot.data?.uid ?? '';
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
-      body: IndexedStack(
-        index: _tabIndex,
-        children: [
-          _buildBuscarTab(),
-          _buildReservasTab(uid),
-          _buildPerfilTab(uid),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _tabIndex,
-        onTap: (i) => setState(() => _tabIndex = i),
-        backgroundColor: const Color(0xFF111827),
-        selectedItemColor: const Color(0xFF1E6BFF),
-        unselectedItemColor: const Color(0xFF6B7280),
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-              icon: Icon(Icons.search_rounded), label: 'Buscar'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.confirmation_number_rounded),
-              label: 'Mis Reservas'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.person_rounded), label: 'Perfil'),
-        ],
-      ),
+        if (uid.isEmpty) {
+          return const Scaffold(
+            backgroundColor: Color(0xFF0A0E1A),
+            body: Center(
+              child: CircularProgressIndicator(color: Color(0xFF1E6BFF)),
+            ),
+          );
+        }
+
+        return Scaffold(
+          backgroundColor: const Color(0xFF0A0E1A),
+          body: IndexedStack(
+            index: _tabIndex,
+            children: [
+              _buildBuscarTab(),
+              _buildReservasTab(uid),
+              _buildPerfilTab(uid),
+            ],
+          ),
+          bottomNavigationBar: BottomNavigationBar(
+            currentIndex: _tabIndex,
+            onTap: (i) => setState(() => _tabIndex = i),
+            backgroundColor: const Color(0xFF111827),
+            selectedItemColor: const Color(0xFF1E6BFF),
+            unselectedItemColor: const Color(0xFF6B7280),
+            type: BottomNavigationBarType.fixed,
+            items: const [
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.search_rounded), label: 'Buscar'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.confirmation_number_rounded),
+                  label: 'Mis Reservas'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.person_rounded), label: 'Perfil'),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -840,6 +854,11 @@ class _PassengerHomeViewState extends State<PassengerHomeView> {
   // TAB 3 — PERFIL
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildPerfilTab(String uid) {
+    if (uid.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFF1E6BFF)),
+      );
+    }
     return SafeArea(
       child: FutureBuilder<DocumentSnapshot>(
         future: _db.collection('usuarios').doc(uid).get(),
