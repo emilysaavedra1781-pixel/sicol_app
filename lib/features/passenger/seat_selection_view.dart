@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'reserva_detalle_view.dart';
 
 // Mapa de labels por ruta
 const Map<String, String> _rutaLabels = {
@@ -14,7 +15,6 @@ class SeatSelectionView extends StatefulWidget {
   final String? nombrePasajero;
   final String? dniPasajero;
   final String paradero;
-  // ✅ NUEVO: ruta seleccionada por el pasajero para asignarla al viaje si aún es null
   final String? rutaSeleccionada;
 
   const SeatSelectionView({
@@ -35,6 +35,17 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
   final _db = FirebaseFirestore.instance;
   bool _guardando = false;
 
+  // ── NUEVO: nombre del acompañante (si se agrega uno) ──────────────────────
+  String? _nombreAcompanante;
+  final _nombreAcompananteCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nombreAcompananteCtrl.dispose();
+    super.dispose();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   String _generarCodigoOTP() {
     const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final random = Random.secure();
@@ -42,6 +53,7 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
         5, (_) => caracteres[random.nextInt(caracteres.length)]).join();
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _confirmarReserva(Map<String, dynamic> viajeData) async {
     if (_asientoSeleccionado == null || _guardando) return;
 
@@ -52,6 +64,13 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
       final codigoUnico = _generarCodigoOTP();
       final numeroAsiento = _asientoSeleccionado!;
       final key = 'asiento_$numeroAsiento';
+
+      // ── NUEVO: usa nombre del acompañante si existe, si no el del pasajero ──
+      final nombreFinal =
+          _nombreAcompanante ?? widget.nombrePasajero ?? 'Pasajero';
+
+      final reservaRef = _db.collection('reservas').doc();
+      final reservaId = reservaRef.id;
 
       await _db.runTransaction((transaction) async {
         final viajeRef = _db.collection('viajes').doc(widget.viajeId);
@@ -67,7 +86,8 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
         final ocupadosLista =
         List<int>.from(data['asientosListaOcupados'] ?? []);
         if (ocupadosLista.contains(numeroAsiento)) {
-          throw Exception('¡El asiento $numeroAsiento acaba de ser ocupado!');
+          throw Exception(
+              '¡El asiento $numeroAsiento acaba de ser ocupado!');
         }
 
         final asientosMapa =
@@ -86,15 +106,13 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
           'estado': 'ocupado',
           'pasajero': {
             'uid': user?.uid ?? '',
-            'nombre': widget.nombrePasajero ?? 'Pasajero',
+            'nombre': nombreFinal,           // ← usa nombreFinal
             'dni': widget.dniPasajero ?? '',
             'paradero': widget.paradero,
             'asiento': numeroAsiento,
           },
         };
 
-        // ✅ FIX PRINCIPAL: si el viaje tiene ruta null, asignarla ahora
-        // con la ruta que el pasajero seleccionó en la pantalla anterior
         final rutaActual = data['ruta'];
         final rutaFinal = rutaActual ?? widget.rutaSeleccionada;
         final rutaLabelFinal = rutaActual != null
@@ -102,24 +120,24 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
             : _rutaLabels[widget.rutaSeleccionada] ??
             widget.rutaSeleccionada;
 
+
         transaction.update(viajeRef, {
           'asientosListaOcupados': ocupadosLista,
           'asientos': asientosMapa,
           'asientosOcupados': ocupadosLista.length,
           'ingresoTotal': FieldValue.increment(15),
-          // ✅ Solo sobreescribe si era null
           if (rutaActual == null) 'ruta': rutaFinal,
           if (rutaActual == null) 'rutaLabel': rutaLabelFinal,
         });
 
         // ── Crear reserva ────────────────────────────────────────────
-        final reservaRef = _db.collection('reservas').doc();
+
         transaction.set(reservaRef, {
           'creadoEn': FieldValue.serverTimestamp(),
           'dniViajero': widget.dniPasajero ?? '',
           'estado': 'confirmada',
           'monto': 15,
-          'nombreViajero': widget.nombrePasajero ?? 'Pasajero',
+          'nombreViajero': nombreFinal,      // ← usa nombreFinal
           'numeroAsiento': numeroAsiento,
           'paradero': widget.paradero,
           'pasajeroUid': user?.uid ?? '',
@@ -129,8 +147,11 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
         });
       });
 
+      // ── NUEVO: limpia el nombre del acompañante tras guardar ─────────────
+      setState(() => _nombreAcompanante = null);
+
       if (!mounted) return;
-      _mostrarCodigoExitoso(codigoUnico);
+      _mostrarCodigoExitoso(codigoUnico, nombreFinal, reservaId);
     } catch (e) {
       if (mounted) _mostrarError(e.toString());
     } finally {
@@ -138,6 +159,116 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // NUEVO: pide nombre completo del acompañante con validación
+  // ─────────────────────────────────────────────────────────────────────────
+  void _pedirNombreAcompanante() {
+    _nombreAcompananteCtrl.clear();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF111827),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Datos del acompañante',
+            style: TextStyle(color: Colors.white)),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Ingresa el nombre completo del acompañante',
+                  style:
+                  TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _nombreAcompananteCtrl,
+                style: const TextStyle(color: Colors.white),
+                textCapitalization: TextCapitalization.words,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'El nombre es obligatorio';
+                  }
+                  final partes = value
+                      .trim()
+                      .split(' ')
+                      .where((p) => p.isNotEmpty)
+                      .toList();
+                  if (partes.length < 2) {
+                    return 'Ingresa nombre Y apellido';
+                  }
+                  if (value.trim().length < 6) {
+                    return 'Nombre demasiado corto';
+                  }
+                  return null;
+                },
+                decoration: InputDecoration(
+                  hintText: 'Ej: Juan Pérez',
+                  hintStyle: const TextStyle(color: Color(0xFF4B5563)),
+                  prefixIcon: const Icon(Icons.person_outline,
+                      color: Color(0xFF6B7280), size: 20),
+                  filled: true,
+                  fillColor: const Color(0xFF0A0E1A),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                      const BorderSide(color: Color(0xFF1F2937))),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                      const BorderSide(color: Color(0xFF1F2937))),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                          color: Color(0xFF1E6BFF), width: 1.5)),
+                  errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                      const BorderSide(color: Color(0xFFFF3B30))),
+                  focusedErrorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                          color: Color(0xFFFF3B30), width: 1.5)),
+                  errorStyle: const TextStyle(
+                      color: Color(0xFFFF3B30), fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar',
+                style: TextStyle(color: Color(0xFF6B7280))),
+          ),
+          TextButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx);
+                // Guarda el nombre y limpia el asiento para que
+                // el usuario elija uno nuevo para el acompañante
+                setState(() {
+                  _nombreAcompanante =
+                      _nombreAcompananteCtrl.text.trim();
+                  _asientoSeleccionado = null;
+                });
+              }
+            },
+            child: const Text('Continuar',
+                style: TextStyle(
+                    color: Color(0xFF1E6BFF),
+                    fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -194,6 +325,41 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
                     ),
                   ],
                 ),
+
+                // ── NUEVO: banner que muestra para quién se reserva ──────────
+                if (_nombreAcompanante != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color:
+                      const Color(0xFF1E6BFF).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: const Color(0xFF1E6BFF)
+                              .withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.person_outline,
+                            color: Color(0xFF1E6BFF), size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Reservando para: $_nombreAcompanante',
+                            style: const TextStyle(
+                                color: Color(0xFF1E6BFF),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 24),
 
                 Container(
@@ -270,6 +436,7 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildBotonAsiento(int numero, List<int> ocupados) {
     final estaOcupado = ocupados.contains(numero);
     final esMio = _asientoSeleccionado == numero;
@@ -311,7 +478,10 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
     );
   }
 
-  void _mostrarCodigoExitoso(String codigo) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // MODIFICADO: recibe también el nombre para mostrarlo en el diálogo
+  // ─────────────────────────────────────────────────────────────────────────
+  void _mostrarCodigoExitoso(String codigo, String nombreReservado, String reservaId) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -325,7 +495,18 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // ── NUEVO: muestra para quién es la reserva ──────────────
+            Text(
+              'Reserva para: $nombreReservado',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: Color(0xFF10B981),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
             const Text('Muestra este código al abordar el vehículo:',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                     color: Color(0xFF9CA3AF), fontSize: 14)),
             const SizedBox(height: 20),
@@ -353,7 +534,16 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              Navigator.pop(context);
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ReservaDetalleView(
+                    reservaId: reservaId,
+                    codigo: codigo,
+                    nombrePasajero: nombreReservado,
+                  ),
+                ),
+              );
             },
             child: const Text('Listo',
                 style: TextStyle(
@@ -363,7 +553,8 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              setState(() => _asientoSeleccionado = null);
+              // ── NUEVO: pide nombre antes de elegir asiento ────────
+              _pedirNombreAcompanante();
             },
             child: const Text('+ Agregar pasajero',
                 style: TextStyle(
@@ -375,6 +566,7 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
   void _mostrarError(String msg) {
     showDialog(
       context: context,

@@ -72,18 +72,18 @@ await _auth.verifyPhoneNumber(
     return query.docs.isNotEmpty;
   }
 
-  /// Registro pasajero
   Future<void> registerPasajero({
     required String dni,
     required String nombre,
     required String apellido,
     required String celular,
+    required String email,
     required String password,
     required String fechaNacimiento,
   }) async {
-    final email = '$celular@sicol.pe';
+    final emailAuth = '$celular@sicol.pe';
     await _auth.createUserWithEmailAndPassword(
-      email: email,
+      email: emailAuth,
       password: password,
     );
     final uid = _auth.currentUser!.uid;
@@ -102,13 +102,13 @@ await _auth.verifyPhoneNumber(
       'creadoEn': FieldValue.serverTimestamp(),
     });
   }
-
   /// Registro conductor (RF53)
   Future<void> registerConductor({
     required String dni,
     required String nombre,
     required String apellido,
     required String celular,
+    required String email,
     required String password,
     required String fechaNacimiento,
     required String numeroLicencia,
@@ -118,9 +118,9 @@ await _auth.verifyPhoneNumber(
     required String marca,
     required String color,
   }) async {
-    final email = '$celular@sicol.pe';
+    final emailAuth = '$celular@sicol.pe';
     await _auth.createUserWithEmailAndPassword(
-      email: email,
+      email: emailAuth,
       password: password,
     );
     final uid = _auth.currentUser!.uid;

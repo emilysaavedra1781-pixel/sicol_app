@@ -492,7 +492,7 @@ class _RegisterViewState extends State<RegisterView> {
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Requerido';
-                    if (v.length < 6) return 'Mínimo 6 caracteres';
+                    if (v.length < 8) return 'Mínimo 8 caracteres';
                     if (!RegExp(r'[A-Z]').hasMatch(v))
                       return 'Debe tener al menos una mayúscula';
                     if (!RegExp(r'[!@#\$%^&*(),.?":{}|<>]').hasMatch(v))
