@@ -148,12 +148,16 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
       final rol = widget.userData['rol'];
 
       // Registrar según rol
+
+
+// Registrar según rol
       if (rol == 'conductor') {
         await _authService.registerConductor(
           dni: widget.userData['dni'],
           nombre: widget.userData['nombre'],
           apellido: widget.userData['apellido'],
           celular: widget.userData['celular'],
+          email: widget.userData['email'],
           password: widget.userData['password'],
           fechaNacimiento: widget.userData['fechaNacimiento'],
           numeroLicencia: widget.userData['numeroLicencia'],
@@ -170,6 +174,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
           nombre: widget.userData['nombre'],
           apellido: widget.userData['apellido'],
           celular: widget.userData['celular'],
+          email: widget.userData['email'], // ← AGREGAR
           password: widget.userData['password'],
           fechaNacimiento: widget.userData['fechaNacimiento'],
         );

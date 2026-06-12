@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../services/booking_service.dart';
 import 'seat_selection_view.dart';
+import 'colectivo_detalle_view.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Paraderos fijos por ruta
@@ -481,16 +482,11 @@ class _PassengerHomeViewState extends State<PassengerHomeView> {
                                   ? () => Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) =>
-                                      SeatSelectionView(
-                                        viajeId: doc.id,
-                                        paradero:
-                                        _paraderoSeleccionado!,
-                                        // ✅ Pasa la ruta para asignarla
-                                        // al viaje si aún tiene ruta null
-                                        rutaSeleccionada:
-                                        _rutaSeleccionada,
-                                      ),
+                                  builder: (_) => ColectivoDetalleView(
+                                    viajeId: doc.id,
+                                    paradero: _paraderoSeleccionado!,
+                                    rutaSeleccionada: _rutaSeleccionada,
+                                  ),
                                 ),
                               )
                                   : null,
@@ -874,9 +870,9 @@ class _PassengerHomeViewState extends State<PassengerHomeView> {
               ? (snap.data!.data() as Map<String, dynamic>)
               : <String, dynamic>{};
 
-          final nombre   = data['nombre'] ?? '';
+          final nombre = data['nombre'] ?? '';
           final apellido = data['apellido'] ?? '';
-          final email    = _auth.currentUser?.email ?? '-';
+          final email = data['email'] ?? '-';
           final foto     = data['fotoUrl'] as String?;
 
           return SingleChildScrollView(

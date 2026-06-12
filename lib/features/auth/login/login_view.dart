@@ -377,20 +377,39 @@ class _LoginViewState extends State<LoginView> {
         const SizedBox(height: 8),
         TextFormField(
           controller: _codigoCtrl,
-          style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              letterSpacing: 2),
+          style: const TextStyle(color: Colors.white, fontSize: 15, letterSpacing: 2),
           textCapitalization: TextCapitalization.characters,
-          decoration: _inputDecoration(
-            hint: 'COND-0001',
-            icon: Icons.badge_outlined,
-          ),
+          maxLength: 8,
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9-]')),
+          ],
+          onChanged: (value) {
+            final upper = value.toUpperCase();
+            if (value != upper) {
+              _codigoCtrl.value = TextEditingValue(
+                text: upper,
+                selection: TextSelection.collapsed(offset: upper.length),
+              );
+            }
+          },
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'Ingresa tu código de conductor';
+            }
+            if (value != value.trim()) {
+              return 'No uses espacios al inicio o final';
+            }
+            if (!RegExp(r'^COND-\d{3}$').hasMatch(value)) {
+              return 'Formato válido: COND-001';
+            }
+            return null;
+          },
+          decoration: _inputDecoration(hint: 'COND-001', icon: Icons.badge_outlined),
         ),
         const SizedBox(height: 20),
         _buildLabel('Contraseña'),
         const SizedBox(height: 8),
-        _buildPassField(_passCondCtrl),
+        _buildPassField(_passCondCtrl),  //
       ],
     );
   }
@@ -430,6 +449,12 @@ class _LoginViewState extends State<LoginView> {
       controller: ctrl,
       obscureText: _obscurePass,
       style: const TextStyle(color: Colors.white, fontSize: 15),
+      validator: (value) {
+        if (value == null || value.isEmpty) return 'Ingresa tu contraseña';
+        if (value != value.trim()) return 'No uses espacios al inicio o final';
+        if (value.length < 8) return 'La contraseña debe tener al menos 8 caracteres';
+        return null;
+      },
       decoration: _inputDecoration(
         hint: '••••••••',
         icon: Icons.lock_outline,
@@ -438,6 +463,8 @@ class _LoginViewState extends State<LoginView> {
             _obscurePass
                 ? Icons.visibility_off_outlined
                 : Icons.visibility_outlined,
+
+
             color: const Color(0xFF6B7280),
             size: 20,
           ),
