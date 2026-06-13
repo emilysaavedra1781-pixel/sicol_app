@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-
 class AuthService {
   final _auth = FirebaseAuth.instance;
   final _db = FirebaseFirestore.instance;
@@ -17,14 +16,11 @@ class AuthService {
     required Function(String, int?) codeSent,
     required Function(String) codeAutoRetrievalTimeout,
   }) async {
-
-await _auth.setSettings(
-appVerificationDisabledForTesting: true,
-  forceRecaptchaFlow: false,
-);
-
-await _auth.verifyPhoneNumber(
-
+    await _auth.setSettings(
+      appVerificationDisabledForTesting: true,
+      forceRecaptchaFlow: false,
+    );
+    await _auth.verifyPhoneNumber(
       phoneNumber: phoneNumber,
       verificationCompleted: verificationCompleted,
       verificationFailed: verificationFailed,
@@ -103,7 +99,7 @@ await _auth.verifyPhoneNumber(
       'creadoEn': FieldValue.serverTimestamp(),
     });
   }
-  /// Registro conductor (RF53)
+
   Future<void> registerConductor({
     required String dni,
     required String nombre,
@@ -152,7 +148,6 @@ await _auth.verifyPhoneNumber(
 
   // ─── RF02/RF23: Login ─────────────────────────────────────────────────────
 
-  /// Login pasajero con celular + contraseña
   Future<Map<String, dynamic>> loginWithCelular({
     required String celular,
     required String password,
@@ -176,8 +171,9 @@ await _auth.verifyPhoneNumber(
     }
 
     try {
+      // ← FIX: usar email generado con celular
       await _auth.signInWithEmailAndPassword(
-        email: data['email'],
+        email: '${data['celular']}@sicol.pe',
         password: password,
       );
       await userDoc.reference.update({'intentosFallidos': 0});
@@ -199,7 +195,6 @@ await _auth.verifyPhoneNumber(
     }
   }
 
-  /// Login conductor con código de conductor + contraseña (RF23)
   Future<Map<String, dynamic>> loginConductor({
     required String codigoConductor,
     required String password,
@@ -231,8 +226,9 @@ await _auth.verifyPhoneNumber(
     }
 
     try {
+      // ← FIX: usar email generado con celular
       await _auth.signInWithEmailAndPassword(
-        email: data['email'],
+        email: '${data['celular']}@sicol.pe',
         password: password,
       );
       await userDoc.reference.update({'intentosFallidos': 0});
@@ -254,7 +250,6 @@ await _auth.verifyPhoneNumber(
     }
   }
 
-  /// Login admin con celular + contraseña
   Future<Map<String, dynamic>> loginAdmin({
     required String celular,
     required String password,
@@ -303,9 +298,7 @@ await _auth.verifyPhoneNumber(
         .snapshots();
   }
 
-  /// Aprueba conductor y genera código automático
   Future<String> aprobarConductor(String uid) async {
-    // Contar conductores aprobados para generar código
     final query = await _db
         .collection('usuarios')
         .where('rol', isEqualTo: 'conductor')
@@ -368,5 +361,3 @@ await _auth.verifyPhoneNumber(
 
   User? get currentUser => _auth.currentUser;
 }
-
-
