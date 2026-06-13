@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../../services/auth_service.dart';
 import '../register/register_view.dart';
 import '../forgot_password/forgot_password_view.dart';
@@ -7,6 +7,8 @@ import '../../passenger/passenger_home_view.dart';
 import '../../driver/driver_pending_view.dart';
 import '../../driver/driver_home_view.dart';
 import '../../admin/admin_home_view.dart';
+import 'login_form.dart';
+import 'login_widgets.dart';
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -18,7 +20,6 @@ class LoginView extends StatefulWidget {
 class _LoginViewState extends State<LoginView> {
   final _authService = AuthService();
 
-  // Rol seleccionado: 'pasajero', 'conductor', 'admin'
   String _rolSeleccionado = 'pasajero';
 
   // Pasajero
@@ -37,8 +38,54 @@ class _LoginViewState extends State<LoginView> {
   bool _obscurePass = true;
   String? _errorMessage;
 
+  // ── Session timeout ──────────────────────────────────────
+  static const Duration _sessionTimeout = Duration(hours: 2, minutes: 30);
+  Timer? _sessionTimer;
+
+  void _resetSessionTimer() {
+    _sessionTimer?.cancel();
+    _sessionTimer = Timer(_sessionTimeout, _onSessionExpired);
+  }
+
+  void _onSessionExpired() {
+    if (!mounted) return;
+    // Muestra aviso y regresa al login
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF111827),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Sesión expirada',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: const Text(
+          'Tu sesión cerró por inactividad. Vuelve a iniciar sesión.',
+          style: TextStyle(color: Color(0xFF6B7280)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginView()),
+                    (route) => false,
+              );
+            },
+            child: const Text('Aceptar',
+                style: TextStyle(color: Color(0xFF1E6BFF))),
+          ),
+        ],
+      ),
+    );
+  }
+  // ────────────────────────────────────────────────────────
+
   @override
   void dispose() {
+    _sessionTimer?.cancel();
     _celularCtrl.dispose();
     _passCtrl.dispose();
     _codigoCtrl.dispose();
@@ -57,8 +104,7 @@ class _LoginViewState extends State<LoginView> {
     Map<String, dynamic> result;
 
     if (_rolSeleccionado == 'pasajero') {
-      if (_celularCtrl.text.trim().isEmpty ||
-          _passCtrl.text.isEmpty) {
+      if (_celularCtrl.text.trim().isEmpty || _passCtrl.text.isEmpty) {
         setState(() {
           _loading = false;
           _errorMessage = 'Completa todos los campos.';
@@ -70,8 +116,7 @@ class _LoginViewState extends State<LoginView> {
         password: _passCtrl.text,
       );
     } else if (_rolSeleccionado == 'conductor') {
-      if (_codigoCtrl.text.trim().isEmpty ||
-          _passCondCtrl.text.isEmpty) {
+      if (_codigoCtrl.text.trim().isEmpty || _passCondCtrl.text.isEmpty) {
         setState(() {
           _loading = false;
           _errorMessage = 'Completa todos los campos.';
@@ -83,8 +128,7 @@ class _LoginViewState extends State<LoginView> {
         password: _passCondCtrl.text,
       );
     } else {
-      if (_celularAdminCtrl.text.trim().isEmpty ||
-          _passAdminCtrl.text.isEmpty) {
+      if (_celularAdminCtrl.text.trim().isEmpty || _passAdminCtrl.text.isEmpty) {
         setState(() {
           _loading = false;
           _errorMessage = 'Completa todos los campos.';
@@ -101,6 +145,9 @@ class _LoginViewState extends State<LoginView> {
     setState(() => _loading = false);
 
     if (result['success'] == true) {
+      // Inicia el timer de sesión al loguearse
+      _resetSessionTimer();
+
       final rol = result['rol'];
       final estado = result['estado'] ?? 'activo';
 
@@ -149,416 +196,238 @@ class _LoginViewState extends State<LoginView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding:
-          const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 24),
+    return Listener(
+      // Reinicia el timer con cualquier toque del usuario
+      onPointerDown: (_) => _resetSessionTimer(),
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0E1A),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 24),
 
-              // Branding
-              Center(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E6BFF),
-                        borderRadius: BorderRadius.circular(20),
+                // Branding
+                Center(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E6BFF),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Icon(Icons.directions_bus_rounded,
+                            color: Colors.white, size: 40),
                       ),
-                      child: const Icon(Icons.directions_bus_rounded,
-                          color: Colors.white, size: 40),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text('SICOL',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 4)),
-                    const SizedBox(height: 4),
-                    const Text('Sistema de Colectivos',
-                        style: TextStyle(
-                            color: Color(0xFF6B7280),
-                            fontSize: 13,
-                            letterSpacing: 1)),
-                  ],
+                      const SizedBox(height: 16),
+                      const Text('SICOL',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 4)),
+                      const SizedBox(height: 4),
+                      const Text('Sistema de Colectivos',
+                          style: TextStyle(
+                              color: Color(0xFF6B7280),
+                              fontSize: 13,
+                              letterSpacing: 1)),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 40),
+                const SizedBox(height: 40),
 
-              // Selector de rol
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111827),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFF1F2937)),
-                ),
-                child: Row(
-                  children: [
-                    _rolTab('pasajero', 'Pasajero',
-                        Icons.person_outline),
-                    _rolTab('conductor', 'Conductor',
-                        Icons.drive_eta_outlined),
-                    _rolTab('admin', 'Admin',
-                        Icons.admin_panel_settings_outlined),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              const Text('Iniciar sesión',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
-              Text(
-                _rolSeleccionado == 'conductor'
-                    ? 'Ingresa tu código de conductor y contraseña'
-                    : 'Ingresa tu celular y contraseña',
-                style: const TextStyle(
-                    color: Color(0xFF6B7280), fontSize: 14),
-              ),
-              const SizedBox(height: 32),
-
-              // Error banner
-              if (_errorMessage != null)
+                // Selector de rol
                 Container(
-                  margin: const EdgeInsets.only(bottom: 20),
-                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFF3B30).withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color:
-                        const Color(0xFFFF3B30).withOpacity(0.3)),
+                    color: const Color(0xFF111827),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF1F2937)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline,
-                          color: Color(0xFFFF3B30), size: 18),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(_errorMessage!,
-                            style: const TextStyle(
-                                color: Color(0xFFFF3B30),
-                                fontSize: 13)),
+                      rolTab(
+                        rol: 'pasajero',
+                        rolSeleccionado: _rolSeleccionado,
+                        label: 'Pasajero',
+                        icon: Icons.person_outline,
+                        onTap: () => setState(() {
+                          _rolSeleccionado = 'pasajero';
+                          _errorMessage = null;
+                          _obscurePass = true;
+                        }),
+                      ),
+                      rolTab(
+                        rol: 'conductor',
+                        rolSeleccionado: _rolSeleccionado,
+                        label: 'Conductor',
+                        icon: Icons.drive_eta_outlined,
+                        onTap: () => setState(() {
+                          _rolSeleccionado = 'conductor';
+                          _errorMessage = null;
+                          _obscurePass = true;
+                        }),
+                      ),
+                      rolTab(
+                        rol: 'admin',
+                        rolSeleccionado: _rolSeleccionado,
+                        label: 'Admin',
+                        icon: Icons.admin_panel_settings_outlined,
+                        onTap: () => setState(() {
+                          _rolSeleccionado = 'admin';
+                          _errorMessage = null;
+                          _obscurePass = true;
+                        }),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 32),
 
-              // Campos según rol
-              if (_rolSeleccionado == 'pasajero')
-                _buildPasajeroForm()
-              else if (_rolSeleccionado == 'conductor')
-                _buildConductorForm()
-              else
-                _buildAdminForm(),
-
-              const SizedBox(height: 12),
-
-              // Olvidé contraseña
-              Align(
-                alignment: Alignment.centerRight,
-                child: GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const ForgotPasswordView()),
-                  ),
-                  child: const Text('¿Olvidaste tu contraseña?',
-                      style: TextStyle(
-                          color: Color(0xFF1E6BFF),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500)),
+                const Text('Iniciar sesión',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 9),
+                Text(
+                  _rolSeleccionado == 'conductor'
+                      ? 'Ingresa tu código de conductor y contraseña'
+                      : 'Ingresa tu celular y contraseña',
+                  style: const TextStyle(
+                      color: Color(0xFF6B7280), fontSize: 14),
                 ),
-              ),
-              const SizedBox(height: 32),
+                const SizedBox(height: 32),
 
-              // Botón login
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E6BFF),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                    elevation: 0,
-                  ),
-                  child: _loading
-                      ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2.5))
-                      : const Text('Iniciar sesión',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600)),
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Registro solo para pasajero y conductor
-              if (_rolSeleccionado != 'admin')
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('¿No tienes cuenta? ',
-                        style: TextStyle(
-                            color: Color(0xFF6B7280), fontSize: 14)),
-                    GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => RegisterView(
-                                rolInicial: _rolSeleccionado)),
-                      ),
-                      child: const Text('Regístrate',
-                          style: TextStyle(
-                              color: Color(0xFF1E6BFF),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
+                // Error banner
+                if (_errorMessage != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF3B30).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: const Color(0xFFFF3B30).withOpacity(0.3)),
                     ),
-                  ],
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline,
+                            color: Color(0xFFFF3B30), size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(_errorMessage!,
+                              style: const TextStyle(
+                                  color: Color(0xFFFF3B30), fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // Formulario según rol
+                if (_rolSeleccionado == 'pasajero')
+                  PasajeroForm(
+                    celularCtrl: _celularCtrl,
+                    passCtrl: _passCtrl,
+                    obscurePass: _obscurePass,
+                    onTogglePass: () =>
+                        setState(() => _obscurePass = !_obscurePass),
+                  )
+                else if (_rolSeleccionado == 'conductor')
+                  ConductorForm(
+                    codigoCtrl: _codigoCtrl,
+                    passCtrl: _passCondCtrl,
+                    obscurePass: _obscurePass,
+                    onTogglePass: () =>
+                        setState(() => _obscurePass = !_obscurePass),
+                  )
+                else
+                  AdminForm(
+                    celularCtrl: _celularAdminCtrl,
+                    passCtrl: _passAdminCtrl,
+                    obscurePass: _obscurePass,
+                    onTogglePass: () =>
+                        setState(() => _obscurePass = !_obscurePass),
+                  ),
+
+                const SizedBox(height: 12),
+
+                // Olvidé contraseña
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const ForgotPasswordView()),
+                    ),
+                    child: const Text('¿Olvidaste tu contraseña?',
+                        style: TextStyle(
+                            color: Color(0xFF1E6BFF),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500)),
+                  ),
                 ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+                const SizedBox(height: 32),
 
-  Widget _buildPasajeroForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildLabel('Número de celular'),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _celularCtrl,
-          keyboardType: TextInputType.phone,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          style: const TextStyle(color: Colors.white, fontSize: 15),
-          decoration: _inputDecoration(
-            hint: '9XXXXXXXX',
-            icon: Icons.phone_outlined,
-            prefix: const Padding(
-              padding: EdgeInsets.only(left: 12, right: 4),
-              child: Text('+51 ',
-                  style: TextStyle(
-                      color: Color(0xFF6B7280), fontSize: 14)),
+                // Botón login
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _loading ? null : _login,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E6BFF),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      elevation: 0,
+                    ),
+                    child: _loading
+                        ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2.5))
+                        : const Text('Iniciar sesión',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                // Registro
+                if (_rolSeleccionado != 'admin')
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('¿No tienes cuenta? ',
+                          style: TextStyle(
+                              color: Color(0xFF6B7280), fontSize: 14)),
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => RegisterView(
+                                  rolInicial: _rolSeleccionado)),
+                        ),
+                        child: const Text('Regístrate',
+                            style: TextStyle(
+                                color: Color(0xFF1E6BFF),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: 20),
-        _buildLabel('Contraseña'),
-        const SizedBox(height: 8),
-        _buildPassField(_passCtrl),
-      ],
-    );
-  }
-
-  Widget _buildConductorForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildLabel('Código de conductor'),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _codigoCtrl,
-          style: const TextStyle(color: Colors.white, fontSize: 15, letterSpacing: 2),
-          textCapitalization: TextCapitalization.characters,
-          maxLength: 8,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9-]')),
-          ],
-          onChanged: (value) {
-            final upper = value.toUpperCase();
-            if (value != upper) {
-              _codigoCtrl.value = TextEditingValue(
-                text: upper,
-                selection: TextSelection.collapsed(offset: upper.length),
-              );
-            }
-          },
-          validator: (value) {
-            if (value == null || value.trim().isEmpty) {
-              return 'Ingresa tu código de conductor';
-            }
-            if (value != value.trim()) {
-              return 'No uses espacios al inicio o final';
-            }
-            if (!RegExp(r'^COND-\d{3}$').hasMatch(value)) {
-              return 'Formato válido: COND-001';
-            }
-            return null;
-          },
-          decoration: _inputDecoration(hint: 'COND-001', icon: Icons.badge_outlined),
-        ),
-        const SizedBox(height: 20),
-        _buildLabel('Contraseña'),
-        const SizedBox(height: 8),
-        _buildPassField(_passCondCtrl),  //
-      ],
-    );
-  }
-
-  Widget _buildAdminForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildLabel('Número de celular'),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _celularAdminCtrl,
-          keyboardType: TextInputType.phone,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          style: const TextStyle(color: Colors.white, fontSize: 15),
-          decoration: _inputDecoration(
-            hint: '9XXXXXXXX',
-            icon: Icons.phone_outlined,
-            prefix: const Padding(
-              padding: EdgeInsets.only(left: 12, right: 4),
-              child: Text('+51 ',
-                  style: TextStyle(
-                      color: Color(0xFF6B7280), fontSize: 14)),
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        _buildLabel('Contraseña'),
-        const SizedBox(height: 8),
-        _buildPassField(_passAdminCtrl),
-      ],
-    );
-  }
-
-  Widget _buildPassField(TextEditingController ctrl) {
-    return TextFormField(
-      controller: ctrl,
-      obscureText: _obscurePass,
-      style: const TextStyle(color: Colors.white, fontSize: 15),
-      validator: (value) {
-        if (value == null || value.isEmpty) return 'Ingresa tu contraseña';
-        if (value != value.trim()) return 'No uses espacios al inicio o final';
-        if (value.length < 8) return 'La contraseña debe tener al menos 8 caracteres';
-        return null;
-      },
-      decoration: _inputDecoration(
-        hint: '••••••••',
-        icon: Icons.lock_outline,
-        suffixIcon: IconButton(
-          icon: Icon(
-            _obscurePass
-                ? Icons.visibility_off_outlined
-                : Icons.visibility_outlined,
-
-
-            color: const Color(0xFF6B7280),
-            size: 20,
-          ),
-          onPressed: () =>
-              setState(() => _obscurePass = !_obscurePass),
-        ),
       ),
     );
   }
-
-  Widget _rolTab(String rol, String label, IconData icon) {
-    final selected = _rolSeleccionado == rol;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() {
-          _rolSeleccionado = rol;
-          _errorMessage = null;
-          _obscurePass = true;
-        }),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFF1E6BFF)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            children: [
-              Icon(icon,
-                  color: selected
-                      ? Colors.white
-                      : const Color(0xFF6B7280),
-                  size: 20),
-              const SizedBox(height: 4),
-              Text(label,
-                  style: TextStyle(
-                      color: selected
-                          ? Colors.white
-                          : const Color(0xFF6B7280),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLabel(String text) => Text(text,
-      style: const TextStyle(
-          color: Color(0xFFD1D5DB),
-          fontSize: 13,
-          fontWeight: FontWeight.w500));
-
-  InputDecoration _inputDecoration({
-    required String hint,
-    required IconData icon,
-    Widget? suffixIcon,
-    Widget? prefix,
-  }) =>
-      InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF4B5563)),
-        prefixIcon:
-        prefix ?? Icon(icon, color: const Color(0xFF6B7280), size: 20),
-        suffixIcon: suffixIcon,
-        filled: true,
-        fillColor: const Color(0xFF111827),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF1F2937)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF1F2937)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFFF3B30)),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
-        ),
-        errorStyle:
-        const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      );
 }
