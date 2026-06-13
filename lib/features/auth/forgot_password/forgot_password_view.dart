@@ -24,9 +24,9 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
   static const int maxIntentos = 3;
 
   final List<TextEditingController> _otpControllers =
-  List.generate(6, (_) => TextEditingController());
+      List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _otpFocusNodes =
-  List.generate(6, (_) => FocusNode());
+      List.generate(6, (_) => FocusNode());
 
   final _passCtrl = TextEditingController();
   final _pass2Ctrl = TextEditingController();
@@ -45,6 +45,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     for (final f in _otpFocusNodes) f.dispose();
     super.dispose();
   }
+
+  // ─── PASO 1: Verificar celular y enviar OTP ───────────────────────────────
 
   Future<void> _enviarOtp() async {
     if (!_formKey.currentState!.validate()) return;
@@ -66,13 +68,15 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       return;
     }
 
-    // MODO PRUEBA: saltar envío de OTP, ir directo a pantalla OTP
+    // MODO PRUEBA: saltar envío de OTP real, ir directo a pantalla OTP
     setState(() {
       _loading = false;
       _verificationId = 'test-verification-id';
       _paso = 'otp';
     });
   }
+
+  // ─── PASO 2: Verificar OTP ────────────────────────────────────────────────
 
   Future<void> _verificarOtp() async {
     final code = _otpCode;
@@ -95,6 +99,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       if (!mounted) return;
       setState(() {
         _loading = false;
+        _errorMessage = null; // ← limpiar error al avanzar
         _paso = 'password';
       });
     } on FirebaseAuthException catch (e) {
@@ -105,57 +110,81 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         for (final c in _otpControllers) c.clear();
         _otpFocusNodes[0].requestFocus();
         if (_intentosOtp >= maxIntentos) {
-          _errorMessage = 'OTP incorrecto. Agotaste los intentos. Vuelve atrás.';
+          _errorMessage =
+              'OTP incorrecto. Agotaste los intentos. Vuelve atrás.';
         } else {
           _errorMessage =
-          'OTP incorrecto (${e.code}). Te quedan ${maxIntentos - _intentosOtp} intento(s).';
+              'OTP incorrecto (${e.code}). Te quedan ${maxIntentos - _intentosOtp} intento(s).';
         }
       });
     }
   }
 
+  // ─── PASO 3: Cambiar contraseña ───────────────────────────────────────────
+
   Future<void> _cambiarPassword() async {
+    // Validaciones antes de llamar la función
+    if (_passCtrl.text.isEmpty) {
+      setState(() => _errorMessage = 'Ingresa una contraseña.');
+      return;
+    }
+    if (_passCtrl.text.length < 6) {
+      setState(() => _errorMessage = 'La contraseña debe tener mínimo 6 caracteres.');
+      return;
+    }
+    if (_passCtrl.text != _pass2Ctrl.text) {
+      setState(() => _errorMessage = 'Las contraseñas no coinciden.');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
+
     try {
+      // ✅ FIX PRINCIPAL: obtener UID desde Firestore por celular
+      // NO usamos FirebaseAuth.instance.currentUser porque en este flujo
+      // el usuario nunca hizo sign-in, así que currentUser es siempre NULL.
       final uid = await _authService.obtenerUidPorCelular(
         _celularCtrl.text.trim(),
       );
 
-      final functions = FirebaseFunctions.instanceFor(
-        region: 'us-central1',
-      );
+      // Llamar Cloud Function con el UID correcto
+      final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+      final callable = functions.httpsCallable('changePassword');
 
-      print("USER:");
-      print(FirebaseAuth.instance.currentUser);
-      print("UID:");
-      print(FirebaseAuth.instance.currentUser?.uid);
-
-      final callable = functions.httpsCallable(
-        'changePassword',
-      );
-
-      final result = await callable.call({
+      await callable.call({
         'uid': uid,
         'newPassword': _passCtrl.text,
       });
 
+      // ✅ Desbloquear cuenta (quita bloqueado=true e intentosFallidos)
+      await _authService.desbloquearCuentaPorCelular(
+        _celularCtrl.text.trim(),
+      );
 
-
-      print("RESULTADO:");
-      print(result.data);
-
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _paso = 'exito';
+      });
     } on FirebaseFunctionsException catch (e) {
-
-      print("CODE: ${e.code}");
-      print("MESSAGE: ${e.message}");
-      print("DETAILS: ${e.details}");
-
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _errorMessage = 'Error al cambiar contraseña: ${e.message}';
+      });
     } catch (e) {
-
-      print("ERROR GENERAL:");
-      print(e);
-
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _errorMessage = 'Error inesperado. Intenta de nuevo.';
+      });
     }
   }
+
+  // ─── OTP helper ───────────────────────────────────────────────────────────
 
   void _onOtpChanged(int index, String value) {
     if (value.length == 1 && index < 5) {
@@ -166,31 +195,33 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     if (_otpCode.length == 6) _verificarOtp();
   }
 
+  // ─── BUILD ────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
       appBar: _paso != 'exito'
           ? AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: Colors.white, size: 20),
-          onPressed: () {
-            if (_paso == 'otp') {
-              setState(() => _paso = 'celular');
-            } else {
-              Navigator.pop(context);
-            }
-          },
-        ),
-        title: const Text('Recuperar contraseña',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600)),
-      )
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new,
+                    color: Colors.white, size: 20),
+                onPressed: () {
+                  if (_paso == 'otp') {
+                    setState(() => _paso = 'celular');
+                  } else {
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+              title: const Text('Recuperar contraseña',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600)),
+            )
           : null,
       body: SafeArea(
         child: Padding(
@@ -213,6 +244,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       ),
     );
   }
+
+  // ─── STEP WIDGETS ─────────────────────────────────────────────────────────
 
   Widget _buildCelularStep() {
     return Form(
@@ -252,8 +285,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
               prefix: const Padding(
                 padding: EdgeInsets.only(left: 12, right: 4),
                 child: Text('+51 ',
-                    style: TextStyle(
-                        color: Color(0xFF6B7280), fontSize: 14)),
+                    style:
+                        TextStyle(color: Color(0xFF6B7280), fontSize: 14)),
               ),
             ),
           ),
@@ -315,8 +348,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                    const BorderSide(color: Color(0xFF1E6BFF), width: 2),
+                    borderSide: const BorderSide(
+                        color: Color(0xFF1E6BFF), width: 2),
                   ),
                 ),
                 onChanged: (v) => _onOtpChanged(i, v),
@@ -377,7 +410,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
                 color: const Color(0xFF6B7280),
                 size: 20,
               ),
-              onPressed: () => setState(() => _obscurePass = !_obscurePass),
+              onPressed: () =>
+                  setState(() => _obscurePass = !_obscurePass),
             ),
           ),
         ),
@@ -456,27 +490,29 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     );
   }
 
+  // ─── HELPERS ──────────────────────────────────────────────────────────────
+
   Widget _errorBanner(String msg) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFF3B30).withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(
-          color: const Color(0xFFFF3B30).withValues(alpha: 0.3)),
-    ),
-    child: Row(
-      children: [
-        const Icon(Icons.error_outline,
-            color: Color(0xFFFF3B30), size: 18),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(msg,
-              style: const TextStyle(
-                  color: Color(0xFFFF3B30), fontSize: 13)),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF3B30).withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: const Color(0xFFFF3B30).withValues(alpha: 0.3)),
         ),
-      ],
-    ),
-  );
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline,
+                color: Color(0xFFFF3B30), size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(msg,
+                  style: const TextStyle(
+                      color: Color(0xFFFF3B30), fontSize: 13)),
+            ),
+          ],
+        ),
+      );
 
   Widget _botonPrincipal({
     required String texto,
@@ -497,13 +533,13 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
           ),
           child: loading
               ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                  color: Colors.white, strokeWidth: 2.5))
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2.5))
               : Text(texto,
-              style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w600)),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600)),
         ),
       );
 
@@ -538,7 +574,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         hintText: hint,
         hintStyle: const TextStyle(color: Color(0xFF4B5563)),
         prefixIcon:
-        prefix ?? Icon(icon, color: const Color(0xFF6B7280), size: 20),
+            prefix ?? Icon(icon, color: const Color(0xFF6B7280), size: 20),
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: const Color(0xFF111827),
@@ -553,7 +589,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide:
-          const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
+              const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -562,11 +598,11 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide:
-          const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
+              const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
         ),
         errorStyle:
-        const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
+            const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
         contentPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       );
 }
