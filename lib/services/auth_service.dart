@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+
 class AuthService {
   final _auth = FirebaseAuth.instance;
   final _db = FirebaseFirestore.instance;
@@ -337,6 +338,20 @@ await _auth.verifyPhoneNumber(
     return doc.data();
   }
 
+  Future<String> obtenerUidPorCelular(String celular) async {
+    final query = await _db
+        .collection('usuarios')
+        .where('celular', isEqualTo: celular)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) {
+      throw Exception('Usuario no encontrado');
+    }
+
+    return query.docs.first.id;
+  }
+
   Future<void> limpiarSesionHuerfana() async {
     final user = _auth.currentUser;
     if (user != null) {
@@ -353,3 +368,5 @@ await _auth.verifyPhoneNumber(
 
   User? get currentUser => _auth.currentUser;
 }
+
+
