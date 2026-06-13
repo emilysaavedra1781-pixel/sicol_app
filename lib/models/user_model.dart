@@ -57,3 +57,5 @@ class UserModel {
   /// Retorna true si la cuenta está activa y no bloqueada
   bool get puedeIniciarSesion => !isBlocked && estado == 'activo';
 }
+
+

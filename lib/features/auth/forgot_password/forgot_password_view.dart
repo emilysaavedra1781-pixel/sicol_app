@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/auth_service.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class ForgotPasswordView extends StatefulWidget {
   const ForgotPasswordView({super.key});
@@ -114,68 +115,45 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
   }
 
   Future<void> _cambiarPassword() async {
-    if (_passCtrl.text != _pass2Ctrl.text) {
-      setState(() => _errorMessage = 'Las contraseñas no coinciden.');
-      return;
-    }
-    final password = _passCtrl.text;
-
-    if (password.length < 8) {
-      setState(() {
-        _errorMessage = 'La contraseña debe tener al menos 8 caracteres.';
-      });
-      return;
-    }
-
-    if (!RegExp(r'[A-Z]').hasMatch(password)) {
-      setState(() {
-        _errorMessage = 'Debe contener al menos una letra mayúscula.';
-      });
-      return;
-    }
-
-    if (!RegExp(r'[a-z]').hasMatch(password)) {
-      setState(() {
-        _errorMessage = 'Debe contener al menos una letra minúscula.';
-      });
-      return;
-    }
-
-    if (!RegExp(r'\d').hasMatch(password)) {
-      setState(() {
-        _errorMessage = 'Debe contener al menos un número.';
-      });
-      return;
-    }
-
-    if (!RegExp(r'[@$!%*?&._#\-]').hasMatch(password)) {
-      setState(() {
-        _errorMessage = 'Debe contener al menos un símbolo especial.';
-      });
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _errorMessage = null;
-    });
-
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      await user!.updatePassword(_passCtrl.text);
-      await _authService.desbloquearCuentaPorCelular(_celularCtrl.text.trim());
+      final uid = await _authService.obtenerUidPorCelular(
+        _celularCtrl.text.trim(),
+      );
 
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _paso = 'exito';
+      final functions = FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      );
+
+      print("USER:");
+      print(FirebaseAuth.instance.currentUser);
+      print("UID:");
+      print(FirebaseAuth.instance.currentUser?.uid);
+
+      final callable = functions.httpsCallable(
+        'changePassword',
+      );
+
+      final result = await callable.call({
+        'uid': uid,
+        'newPassword': _passCtrl.text,
       });
+
+
+
+      print("RESULTADO:");
+      print(result.data);
+
+    } on FirebaseFunctionsException catch (e) {
+
+      print("CODE: ${e.code}");
+      print("MESSAGE: ${e.message}");
+      print("DETAILS: ${e.details}");
+
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _errorMessage = 'Error al cambiar contraseña. Intenta nuevamente.';
-      });
+
+      print("ERROR GENERAL:");
+      print(e);
+
     }
   }
 
@@ -264,15 +242,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
             style: const TextStyle(color: Colors.white, fontSize: 15),
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             validator: (v) {
-              if (v == null || v.trim().isEmpty) {
-                return 'Ingresa tu celular';
-              }
-              if (!RegExp(r'^\d{9}$').hasMatch(v)) {
-                return 'Debe contener exactamente 9 dígitos';
-              }
-              if (!v.startsWith('9')) {
-                return 'El celular debe comenzar con 9';
-              }
+              if (v == null || v.isEmpty) return 'Ingresa tu celular';
+              if (v.length != 9) return '9 dígitos requeridos';
               return null;
             },
             decoration: _inputDecoration(
