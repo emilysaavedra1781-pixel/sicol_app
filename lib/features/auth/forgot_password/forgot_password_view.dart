@@ -118,8 +118,40 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       setState(() => _errorMessage = 'Las contraseñas no coinciden.');
       return;
     }
-    if (_passCtrl.text.length < 6) {
-      setState(() => _errorMessage = 'Mínimo 6 caracteres.');
+    final password = _passCtrl.text;
+
+    if (password.length < 8) {
+      setState(() {
+        _errorMessage = 'La contraseña debe tener al menos 8 caracteres.';
+      });
+      return;
+    }
+
+    if (!RegExp(r'[A-Z]').hasMatch(password)) {
+      setState(() {
+        _errorMessage = 'Debe contener al menos una letra mayúscula.';
+      });
+      return;
+    }
+
+    if (!RegExp(r'[a-z]').hasMatch(password)) {
+      setState(() {
+        _errorMessage = 'Debe contener al menos una letra minúscula.';
+      });
+      return;
+    }
+
+    if (!RegExp(r'\d').hasMatch(password)) {
+      setState(() {
+        _errorMessage = 'Debe contener al menos un número.';
+      });
+      return;
+    }
+
+    if (!RegExp(r'[@$!%*?&._#\-]').hasMatch(password)) {
+      setState(() {
+        _errorMessage = 'Debe contener al menos un símbolo especial.';
+      });
       return;
     }
 
@@ -232,8 +264,15 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
             style: const TextStyle(color: Colors.white, fontSize: 15),
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             validator: (v) {
-              if (v == null || v.isEmpty) return 'Ingresa tu celular';
-              if (v.length != 9) return '9 dígitos requeridos';
+              if (v == null || v.trim().isEmpty) {
+                return 'Ingresa tu celular';
+              }
+              if (!RegExp(r'^\d{9}$').hasMatch(v)) {
+                return 'Debe contener exactamente 9 dígitos';
+              }
+              if (!v.startsWith('9')) {
+                return 'El celular debe comenzar con 9';
+              }
               return null;
             },
             decoration: _inputDecoration(
