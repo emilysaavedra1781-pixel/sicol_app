@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/booking_service.dart';
-import 'mapa_seguimiento_inline.dart';
 import 'mapa_seguimiento_widget.dart';
 
 class ReservasTab extends StatelessWidget {
@@ -23,7 +22,7 @@ class ReservasTab extends StatelessWidget {
         stream: db
             .collection('reservas')
             .where('pasajeroUid', isEqualTo: uid)
-            .where('estado', isEqualTo: 'confirmada')
+            .where('estado', whereIn: ['confirmada', 'abordado']) // ← FIX 1
             .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
@@ -32,7 +31,6 @@ class ReservasTab extends StatelessWidget {
           }
           final reservas = snapshot.data!.docs;
 
-          // ── Agrupar reservas por viajeId ─────────────────────────────────
           final Map<String, List<DocumentSnapshot>> porViaje = {};
           for (final doc in reservas) {
             final data = doc.data() as Map<String, dynamic>;
@@ -118,7 +116,6 @@ class ReservasTab extends StatelessWidget {
     );
   }
 
-  // ── Tarjeta agrupada por viaje ───────────────────────────────────────────
   Widget _buildViajeCard(BuildContext context, String viajeId,
       List<DocumentSnapshot> reservas) {
     final db = FirebaseFirestore.instance;
@@ -155,7 +152,6 @@ class ReservasTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header del viaje ─────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -197,7 +193,6 @@ class ReservasTab extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
 
-                    // Info conductor y vehículo
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -241,29 +236,14 @@ class ReservasTab extends StatelessWidget {
                       ),
                     ),
 
-                    // ── Mapa — solo una vez por viaje ────────────────────
+                    // ── FIX 2: mapa aparece automáticamente cuando conductor arranca ──
                     if (enCamino) ...[
                       const SizedBox(height: 12),
-                      MapaSeguimientoInline(viajeId: viajeId),
-                      const SizedBox(height: 8),
                       SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () =>
-                              _abrirMapaModal(context, viajeId),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF10B981),
-                            side: const BorderSide(
-                                color: Color(0xFF10B981), width: 1),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                          ),
-                          icon: const Icon(Icons.fullscreen_rounded,
-                              size: 14),
-                          label: const Text('Ver mapa completo',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600)),
+                        height: 300,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: MapaSeguimientoWidget(viajeId: viajeId),
                         ),
                       ),
                     ],
@@ -271,10 +251,8 @@ class ReservasTab extends StatelessWidget {
                 ),
               ),
 
-              const Divider(
-                  color: Color(0xFF1F2937), thickness: 1, height: 1),
+              const Divider(color: Color(0xFF1F2937), thickness: 1, height: 1),
 
-              // ── Reservas del viaje ───────────────────────────────────────
               ...reservas.map((doc) =>
                   _buildReservaItem(context, doc, viajeId, enCamino)),
             ],
@@ -284,7 +262,6 @@ class ReservasTab extends StatelessWidget {
     );
   }
 
-  // ── Item individual de reserva ───────────────────────────────────────────
   Widget _buildReservaItem(BuildContext context, DocumentSnapshot doc,
       String viajeId, bool enCamino) {
     final res = doc.data() as Map<String, dynamic>;
@@ -299,7 +276,6 @@ class ReservasTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Nombre del pasajero
           Row(children: [
             Icon(
                 esAcompanante
@@ -359,7 +335,6 @@ class ReservasTab extends StatelessWidget {
           ]),
           const SizedBox(height: 10),
 
-          // Código de verificación
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -386,14 +361,12 @@ class ReservasTab extends StatelessWidget {
                         letterSpacing: 6)),
                 const SizedBox(height: 4),
                 const Text('Muéstralo al conductor al abordar',
-                    style: TextStyle(
-                        color: Color(0xFF6B7280), fontSize: 11)),
+                    style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
               ],
             ),
           ),
           const SizedBox(height: 10),
 
-          // Botones acción
           Row(children: [
             if (enCamino)
               Expanded(
@@ -443,7 +416,6 @@ class ReservasTab extends StatelessWidget {
               ),
           ]),
 
-          // Separador entre reservas del mismo viaje
           const SizedBox(height: 8),
           const Divider(color: Color(0xFF1F2937), thickness: 0.5),
         ],
@@ -566,21 +538,5 @@ class ReservasTab extends StatelessWidget {
         }
       }
     }
-  }
-
-  void _abrirMapaModal(BuildContext context, String viajeId) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF111827),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-      ),
-      builder: (ctx) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.80,
-        child: MapaSeguimientoWidget(viajeId: viajeId),
-      ),
-    );
   }
 }
