@@ -128,4 +128,15 @@ class TripService {
         .get();
     return query.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
+
+  // ─── Verificar si todos los pasajeros bajaron ─────────────────────────────
+  Future<bool> todosBajaron(String viajeId) async {
+    final snap = await _db
+        .collection('reservas')
+        .where('viajeId', isEqualTo: viajeId)
+        .where('estado', whereIn: ['confirmada', 'abordado'])
+        .limit(1)
+        .get();
+    return snap.docs.isEmpty;
+  }
 }

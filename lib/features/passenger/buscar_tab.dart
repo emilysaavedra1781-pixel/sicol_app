@@ -148,6 +148,64 @@ class _BuscarTabState extends State<BuscarTab> {
     );
   }
 
+  // ── Widget calificación del conductor ─────────────────────────────────────
+  Widget _buildCalificacionConductor(String conductorUid) {
+    if (conductorUid.isEmpty) return const SizedBox();
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(conductorUid)
+          .get(),
+      builder: (context, snap) {
+        if (!snap.hasData || !snap.data!.exists) return const SizedBox();
+
+        final data = snap.data!.data() as Map<String, dynamic>;
+        final promedio = (data['promedioCalificacion'] as num?)?.toDouble() ?? 0.0;
+        final total = (data['totalCalificaciones'] as num?)?.toInt() ?? 0;
+
+        if (total == 0) {
+          return Row(children: [
+            const Icon(Icons.star_border_rounded,
+                size: 14, color: Color(0xFF4B5563)),
+            const SizedBox(width: 4),
+            const Text('Sin calificaciones aún',
+                style: TextStyle(color: Color(0xFF4B5563), fontSize: 11)),
+          ]);
+        }
+
+        return Row(children: [
+          // Estrellas
+          ...List.generate(5, (i) {
+            if (i < promedio.floor()) {
+              return const Icon(Icons.star_rounded,
+                  size: 14, color: Color(0xFFF59E0B));
+            } else if (i < promedio && promedio - i >= 0.5) {
+              return const Icon(Icons.star_half_rounded,
+                  size: 14, color: Color(0xFFF59E0B));
+            } else {
+              return const Icon(Icons.star_border_rounded,
+                  size: 14, color: Color(0xFF4B5563));
+            }
+          }),
+          const SizedBox(width: 6),
+          Text(
+            promedio.toStringAsFixed(1),
+            style: const TextStyle(
+                color: Color(0xFFF59E0B),
+                fontSize: 12,
+                fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '($total)',
+            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11),
+          ),
+        ]);
+      },
+    );
+  }
+
   Widget _buildListaColectivos() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,6 +350,9 @@ class _BuscarTabState extends State<BuscarTab> {
                               ),
                             ],
                           ),
+                          const SizedBox(height: 6),
+                          // ← Calificación del conductor
+                          _buildCalificacionConductor(viaje['conductorUid'] ?? ''),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,

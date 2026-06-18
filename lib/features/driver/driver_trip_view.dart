@@ -32,7 +32,9 @@ class _DriverTripViewState extends State<DriverTripView>
   bool _cerrando = false;
   bool _arrancando = false;
   bool _yaNotificado = false;
-  bool _forzadoNotificado = false; // ← nuevo
+  bool _forzadoNotificado = false;
+  bool _simulacionIniciada = false; // ← fix reinicio de simulación
+  bool _todosBajaron = false;       // ← nuevo: controla botón terminar viaje
 
   @override
   void initState() {
@@ -51,16 +53,6 @@ class _DriverTripViewState extends State<DriverTripView>
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  bool _haLlegadoAlDestino(Map<String, dynamic>? ubicacion, String ruta) {
-    if (ubicacion == null) return false;
-    final lat = (ubicacion['lat'] as num?)?.toDouble() ?? 0;
-    final lng = (ubicacion['lng'] as num?)?.toDouble() ?? 0;
-    final destino =
-    ruta == 'chosica_lima' ? destinoChosicaLima : destinoLimaChosica;
-    return (lat - destino.latitude).abs() < umbralLlegada &&
-        (lng - destino.longitude).abs() < umbralLlegada;
-  }
 
   bool _todosAbordaron(Map<String, dynamic> asientos) {
     final conPasajero = asientos.values.where((a) {
@@ -91,13 +83,13 @@ class _DriverTripViewState extends State<DriverTripView>
     final pendientes = _contarPendientes(asientos);
     final forzado = viaje['forzadoPorAdmin'] == true;
 
-    // Si no está forzado, aplica validaciones normales
     if (!forzado && (!estaLleno || pendientes > 0)) return;
 
     setState(() => _arrancando = true);
     try {
       await _tripService.arrancarColectivo(widget.viajeId);
       final ruta = viaje['ruta'] ?? 'chosica_lima';
+      _simulacionIniciada = true;
       _simService.iniciarSimulacion(widget.viajeId, ruta);
       _tabController.animateTo(1);
     } catch (e) {
@@ -144,6 +136,7 @@ class _DriverTripViewState extends State<DriverTripView>
     if (confirm == true && mounted) {
       setState(() => _cerrando = true);
       try {
+        _simulacionIniciada = false;
         _simService.detenerSimulacion();
         await _tripService.cerrarViaje(widget.viajeId);
         if (mounted) Navigator.pop(context);
@@ -191,8 +184,8 @@ class _DriverTripViewState extends State<DriverTripView>
                     fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text('Paradero: ${pasajero['paradero'] ?? '-'}',
-                style:
-                const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                style: const TextStyle(
+                    color: Color(0xFF6B7280), fontSize: 13)),
             const SizedBox(height: 16),
             const Text('Ingresa el código del pasajero:',
                 style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13)),
@@ -314,8 +307,8 @@ class _DriverTripViewState extends State<DriverTripView>
                     fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text(exito ? '$mensaje ha abordado' : mensaje,
-                style:
-                const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                style: const TextStyle(
+                    color: Color(0xFF6B7280), fontSize: 13),
                 textAlign: TextAlign.center),
           ],
         ),
@@ -374,10 +367,20 @@ class _DriverTripViewState extends State<DriverTripView>
             (viaje['asientos'] as Map?)?.cast<String, dynamic>() ?? {};
         final ubicacion =
         (viaje['ubicacionActual'] as Map?)?.cast<String, dynamic>();
-        final llegoAlDestino =
-            enCamino && _haLlegadoAlDestino(ubicacion, ruta);
         final todosAbordaron = _todosAbordaron(asientos);
         final pendientes = _contarPendientes(asientos);
+
+        // ── Verificar si todos los pasajeros bajaron ──────────────────────
+        if (enCamino) {
+          _tripService.todosBajaron(widget.viajeId).then((valor) {
+            if (mounted && _todosBajaron != valor) {
+              setState(() => _todosBajaron = valor);
+            }
+          });
+        }
+
+        // llegoAlDestino ahora depende de que todos los pasajeros hayan bajado
+        final llegoAlDestino = enCamino && _todosBajaron;
 
         // ── Notificación luz verde del admin ─────────────────────────────
         if (forzado && !enCamino && !_forzadoNotificado) {
@@ -393,15 +396,18 @@ class _DriverTripViewState extends State<DriverTripView>
                     borderRadius: BorderRadius.circular(16)),
                 title: const Row(
                   children: [
-                    Icon(Icons.flash_on, color: Color(0xFFF59E0B), size: 22),
+                    Icon(Icons.flash_on,
+                        color: Color(0xFFF59E0B), size: 22),
                     SizedBox(width: 8),
                     Text('¡Luz verde del admin!',
-                        style: TextStyle(color: Colors.white, fontSize: 16)),
+                        style: TextStyle(
+                            color: Colors.white, fontSize: 16)),
                   ],
                 ),
                 content: const Text(
                   'El administrador autorizó la salida. Puedes arrancar el viaje aunque el colectivo no esté lleno.',
-                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+                  style: TextStyle(
+                      color: Color(0xFF6B7280), fontSize: 14),
                 ),
                 actions: [
                   ElevatedButton(
@@ -421,7 +427,6 @@ class _DriverTripViewState extends State<DriverTripView>
           });
         }
 
-        // Resetear cuando ya arrancó
         if (enCamino) _forzadoNotificado = false;
 
         // ── Notificación colectivo lleno ─────────────────────────────────
@@ -439,7 +444,8 @@ class _DriverTripViewState extends State<DriverTripView>
                     child: Text(
                       '¡Colectivo lleno! Valida los códigos de cada pasajero antes de arrancar.',
                       style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.w600),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600),
                     ),
                   ),
                 ]),
@@ -447,7 +453,8 @@ class _DriverTripViewState extends State<DriverTripView>
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: Color(0xFF10B981), width: 1),
+                  side: const BorderSide(
+                      color: Color(0xFF10B981), width: 1),
                 ),
                 duration: const Duration(seconds: 5),
               ),
@@ -457,10 +464,14 @@ class _DriverTripViewState extends State<DriverTripView>
 
         if (asientosOcupados < capacidad) _yaNotificado = false;
 
-        if (enCamino && _simService.estaDetenido) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _simService.iniciarSimulacion(widget.viajeId, ruta);
-          });
+        // ── Iniciar simulación solo una vez ──────────────────────────────
+        if (enCamino && !_simulacionIniciada) {
+          _simulacionIniciada = true;
+          if (_simService.estaDetenido) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _simService.iniciarSimulacion(widget.viajeId, ruta);
+            });
+          }
         }
 
         if (enCamino && ubicacion != null) {
@@ -531,9 +542,13 @@ class _DriverTripViewState extends State<DriverTripView>
               labelStyle: const TextStyle(
                   fontSize: 13, fontWeight: FontWeight.w600),
               tabs: const [
-                Tab(icon: Icon(Icons.dashboard_rounded, size: 18), text: 'Viaje'),
+                Tab(
+                    icon: Icon(Icons.dashboard_rounded, size: 18),
+                    text: 'Viaje'),
                 Tab(icon: Icon(Icons.map_rounded, size: 18), text: 'Mapa'),
-                Tab(icon: Icon(Icons.people_rounded, size: 18), text: 'Pasajeros'),
+                Tab(
+                    icon: Icon(Icons.people_rounded, size: 18),
+                    text: 'Pasajeros'),
               ],
             ),
           ),

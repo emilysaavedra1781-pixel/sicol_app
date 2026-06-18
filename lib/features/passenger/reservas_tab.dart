@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/booking_service.dart';
 import 'mapa_seguimiento_inline.dart';
 import 'mapa_seguimiento_widget.dart';
+import 'calificacion_view.dart';
 
 class ReservasTab extends StatelessWidget {
   final String uid;
@@ -23,7 +25,7 @@ class ReservasTab extends StatelessWidget {
         stream: db
             .collection('reservas')
             .where('pasajeroUid', isEqualTo: uid)
-            .where('estado', isEqualTo: 'confirmada')
+            .where('estado', whereIn: ['confirmada', 'abordado', 'finalizada']) // ← CP06
             .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
@@ -105,7 +107,8 @@ class ReservasTab extends StatelessWidget {
                         (ctx, i) {
                       final viajeId = porViaje.keys.elementAt(i);
                       final reservasDelViaje = porViaje[viajeId]!;
-                      return _buildViajeCard(context, viajeId, reservasDelViaje);
+                      return _buildViajeCard(
+                          context, viajeId, reservasDelViaje);
                     },
                     childCount: porViaje.length,
                   ),
@@ -179,8 +182,10 @@ class ReservasTab extends StatelessWidget {
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: enCamino
-                                ? const Color(0xFF1E6BFF).withValues(alpha: 0.15)
-                                : const Color(0xFF10B981).withValues(alpha: 0.15),
+                                ? const Color(0xFF1E6BFF)
+                                .withValues(alpha: 0.15)
+                                : const Color(0xFF10B981)
+                                .withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -293,6 +298,9 @@ class ReservasTab extends StatelessWidget {
     final paradero = res['paradero'] ?? '-';
     final nombreViajero = res['nombreViajero'] ?? '-';
     final esAcompanante = res['esAcompanante'] == true;
+    final estadoReserva = res['estado'] ?? 'confirmada';
+    final yaAbordado = estadoReserva == 'abordado';
+    final finalizada = estadoReserva == 'finalizada'; // ← nuevo
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -335,6 +343,38 @@ class ReservasTab extends StatelessWidget {
                         fontWeight: FontWeight.w600)),
               ),
             ],
+            if (yaAbordado) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text('Abordado',
+                    style: TextStyle(
+                        color: Color(0xFF10B981),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
+            if (finalizada) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text('Finalizado',
+                    style: TextStyle(
+                        color: Color(0xFFF59E0B),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
           ]),
           const SizedBox(height: 8),
 
@@ -359,43 +399,63 @@ class ReservasTab extends StatelessWidget {
           ]),
           const SizedBox(height: 10),
 
-          // Código de verificación
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A0E1A),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: const Color(0xFF1E6BFF).withValues(alpha: 0.3)),
+          // Código de verificación — solo si no está finalizado
+          if (!finalizada) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0E1A),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: const Color(0xFF1E6BFF).withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                children: [
+                  const Text('CÓDIGO DE VERIFICACIÓN',
+                      style: TextStyle(
+                          color: Color(0xFF6B7280),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1)),
+                  const SizedBox(height: 4),
+                  Text(codigo,
+                      style: const TextStyle(
+                          color: Color(0xFF1E6BFF),
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 6)),
+                  const SizedBox(height: 4),
+                  const Text('Muéstralo al conductor al abordar',
+                      style: TextStyle(
+                          color: Color(0xFF6B7280), fontSize: 11)),
+                ],
+              ),
             ),
-            child: Column(
-              children: [
-                const Text('CÓDIGO DE VERIFICACIÓN',
-                    style: TextStyle(
-                        color: Color(0xFF6B7280),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1)),
-                const SizedBox(height: 4),
-                Text(codigo,
-                    style: const TextStyle(
-                        color: Color(0xFF1E6BFF),
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 6)),
-                const SizedBox(height: 4),
-                const Text('Muéstralo al conductor al abordar',
-                    style: TextStyle(
-                        color: Color(0xFF6B7280), fontSize: 11)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
+            const SizedBox(height: 10),
+          ],
 
-          // Botones acción
+          // ── Botones acción ───────────────────────────────────────────────
           Row(children: [
-            if (enCamino)
+            if (finalizada) ...[
+              // CP01/CP06 — Botón calificar solo cuando viaje finalizado
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _abrirCalificacion(context, viajeId, doc),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF59E0B),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                  icon: const Icon(Icons.star_rounded, size: 14),
+                  label: const Text('Calificar viaje',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ] else if (enCamino) ...[
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _yaBaje(
@@ -417,8 +477,8 @@ class ReservasTab extends StatelessWidget {
                       style: TextStyle(
                           fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
-              )
-            else
+              ),
+            ] else ...[
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _cancelarReserva(
@@ -441,12 +501,77 @@ class ReservasTab extends StatelessWidget {
                           fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               ),
+            ],
           ]),
 
-          // Separador entre reservas del mismo viaje
           const SizedBox(height: 8),
           const Divider(color: Color(0xFF1F2937), thickness: 0.5),
         ],
+      ),
+    );
+  }
+
+  // ── Abrir pantalla de calificación ───────────────────────────────────────
+  Future<void> _abrirCalificacion(
+      BuildContext context,
+      String viajeId,
+      DocumentSnapshot reservaDoc,
+      ) async {
+    final pasajeroUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+    // CP03 — Verificar si ya calificó antes de abrir la pantalla
+    if (pasajeroUid.isNotEmpty) {
+      final yaCalif = await FirebaseFirestore.instance
+          .collection('calificaciones')
+          .where('viajeId', isEqualTo: viajeId)
+          .where('pasajeroUid', isEqualTo: pasajeroUid)
+          .limit(1)
+          .get();
+
+      if (yaCalif.docs.isNotEmpty && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(children: [
+              Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Ya calificaste este viaje. Solo se permite una calificación por viaje.',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ]),
+            backgroundColor: const Color(0xFFF59E0B),
+            behavior: SnackBarBehavior.floating,
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return; // ← bloquea la navegación
+      }
+    }
+    final viajeSnap = await FirebaseFirestore.instance
+        .collection('viajes')
+        .doc(viajeId)
+        .get();
+
+    if (!viajeSnap.exists || !context.mounted) return;
+
+    final vData = viajeSnap.data()!;
+    final conductorUid = vData['conductorUid'] ?? '';
+    final conductorNombre = vData['conductorNombre'] ?? 'Conductor';
+    final rutaLabel = vData['rutaLabel'] ?? '-';
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CalificacionView(
+          viajeId: viajeId,
+          conductorUid: conductorUid,
+          conductorNombre: conductorNombre,
+          rutaLabel: rutaLabel,
+        ),
       ),
     );
   }
