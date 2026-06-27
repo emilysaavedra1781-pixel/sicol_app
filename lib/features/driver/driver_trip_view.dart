@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../services/trip_service.dart';
 import '../../services/simulation_service.dart';
+import '../../services/location_service.dart';
 import 'constants/route_data.dart';
 import 'tabs/trip_tab.dart';
 import 'tabs/map_tab.dart';
@@ -26,6 +27,7 @@ class _DriverTripViewState extends State<DriverTripView>
     with SingleTickerProviderStateMixin {
   final _tripService = TripService();
   final _simService = SimulationService();
+  final _locationService = LocationService();
   late TabController _tabController;
   GoogleMapController? _mapController;
 
@@ -103,7 +105,7 @@ class _DriverTripViewState extends State<DriverTripView>
     }
   }
 
-  Future<void> _terminarViaje() async {
+  Future<void> _terminarViaje(String ruta) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -134,6 +136,41 @@ class _DriverTripViewState extends State<DriverTripView>
     );
 
     if (confirm == true && mounted) {
+      // ── RF34: Verificación de GPS antes de finalizar ─────────────────
+      try {
+        final verificacion = await _locationService
+            .verificarUbicacionParaFinalizarViaje(ruta);
+
+        if (!verificacion.dentroDelRango) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                    'Estás a ${verificacion.distanciaMetros.toStringAsFixed(0)}m del destino. Debes estar a menos de 200m para terminar el viaje.'),
+                backgroundColor: const Color(0xFFFF3B30),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            );
+          }
+          return; // bloquea el cierre del viaje
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.toString().replaceFirst('Exception: ', '')),
+              backgroundColor: const Color(0xFFFF3B30),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        }
+        return;
+      }
+
       setState(() => _cerrando = true);
       try {
         _simulacionIniciada = false;
@@ -570,7 +607,7 @@ class _DriverTripViewState extends State<DriverTripView>
                 cerrando: _cerrando,
                 onArrancar: () => _arrancarColectivo(viaje),
                 onVerificar: () => _tabController.animateTo(2),
-                onTerminar: _terminarViaje,
+                onTerminar: () => _terminarViaje(ruta),
               ),
               MapTab(
                 enCamino: enCamino,

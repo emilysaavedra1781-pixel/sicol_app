@@ -5,6 +5,7 @@ import '../../services/booking_service.dart';
 import 'mapa_seguimiento_inline.dart';
 import 'mapa_seguimiento_widget.dart';
 import 'calificacion_view.dart';
+import '../shared/reportar_incidencia_view.dart';
 
 class ReservasTab extends StatelessWidget {
   final String uid;
@@ -505,12 +506,26 @@ class ReservasTab extends StatelessWidget {
           ]),
 
           const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: () =>
+                  _reportarIncidencia(context, viajeId, nombreViajero),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF9CA3AF),
+              ),
+              icon: const Icon(Icons.report_problem_outlined, size: 14),
+              label: const Text('Reportar incidencia',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            ),
+          ),
+
+          const SizedBox(height: 8),
           const Divider(color: Color(0xFF1F2937), thickness: 0.5),
         ],
       ),
     );
   }
-
   // ── Abrir pantalla de calificación ───────────────────────────────────────
   Future<void> _abrirCalificacion(
       BuildContext context,
@@ -705,6 +720,19 @@ class ReservasTab extends StatelessWidget {
       builder: (ctx) => SizedBox(
         height: MediaQuery.of(context).size.height * 0.80,
         child: MapaSeguimientoWidget(viajeId: viajeId),
+      ),
+    );
+  }
+
+  void _reportarIncidencia(
+      BuildContext context, String viajeId, String nombreViajero) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReportarIncidenciaView(
+          rolUsuario: 'pasajero',
+          viajeId: viajeId,
+        ),
       ),
     );
   }

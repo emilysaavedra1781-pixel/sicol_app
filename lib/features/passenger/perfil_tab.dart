@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../shared/mis_incidencias_view.dart';
 
 class PerfilTab extends StatelessWidget {
   final String uid;
@@ -120,6 +121,27 @@ class PerfilTab extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MisIncidenciasView(),
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF9CA3AF),
+                      side: const BorderSide(color: Color(0xFF1F2937), width: 1),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    icon: const Icon(Icons.report_problem_outlined, size: 18),
+                    label: const Text('Mis incidencias',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   height: 50,

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/notification_service.dart';
 import '../register/register_view.dart';
 import '../forgot_password/forgot_password_view.dart';
 import '../../passenger/passenger_home_view.dart';
@@ -19,6 +20,7 @@ class LoginView extends StatefulWidget {
 
 class _LoginViewState extends State<LoginView> {
   final _authService = AuthService();
+  final _notificationService = NotificationService();
 
   String _rolSeleccionado = 'pasajero';
 
@@ -147,6 +149,9 @@ class _LoginViewState extends State<LoginView> {
     if (result['success'] == true) {
       // Inicia el timer de sesión al loguearse
       _resetSessionTimer();
+
+      // RF30/RF42 — Registrar token FCM para notificaciones push
+      await _notificationService.registrarToken();
 
       final rol = result['rol'];
       final estado = result['estado'] ?? 'activo';

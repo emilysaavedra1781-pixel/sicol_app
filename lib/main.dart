@@ -9,6 +9,12 @@ import 'features/passenger/passenger_home_view.dart';
 import 'features/driver/driver_pending_view.dart';
 import 'features/driver/driver_home_view.dart';
 import 'features/admin/admin_home_view.dart';
+import 'services/notification_service.dart';
+
+/// Clave global de navegación — permite mostrar SnackBars/diálogos y
+/// navegar desde fuera del árbol de widgets (por ejemplo, al recibir
+/// una notificación push en foreground). RF30/RF42.
+final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +28,10 @@ void main() async {
     forceRecaptchaFlow: false,
   );
 
+  // RF30/RF42 — Parte 3: empezar a escuchar notificaciones push
+  // (foreground + tap en background/terminated).
+  NotificationService().escucharNotificaciones(navigatorKey);
+
   runApp(const MyApp());
 }
 
@@ -31,6 +41,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'SICOL',
       theme: ThemeData.dark().copyWith(

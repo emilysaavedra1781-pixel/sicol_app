@@ -3,8 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
 import '../../services/trip_service.dart';
+import '../../services/location_service.dart';
 import '../auth/login/login_view.dart';
 import 'driver_trip_view.dart';
+import 'driver_drawer.dart';
 
 class DriverHomeView extends StatefulWidget {
   const DriverHomeView({super.key});
@@ -15,6 +17,7 @@ class DriverHomeView extends StatefulWidget {
 
 class _DriverHomeViewState extends State<DriverHomeView> {
   final _tripService = TripService();
+  final _locationService = LocationService();
   bool _iniciando = false;
 
   Future<void> _logout() async {
@@ -54,9 +57,116 @@ class _DriverHomeViewState extends State<DriverHomeView> {
     }
   }
 
-  // ✅ Sin diálogo de ruta — solo inicia directo
+  // RF34 — Verifica la ubicación del conductor antes de iniciar el viaje.
+  // Si está fuera del radio permitido, muestra advertencia pero permite
+  // continuar (según criterio de aceptación de la matriz de requerimientos).
+  // Retorna `true` si se debe continuar con el inicio del viaje.
+  Future<bool> _verificarUbicacionConAdvertencia() async {
+    VerificacionUbicacion resultado;
+    try {
+      resultado = await _locationService.verificarUbicacionParaIniciarViaje();
+    } catch (e) {
+      if (!mounted) return false;
+      final continuar = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF111827),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.location_off_rounded,
+                  color: Color(0xFFF59E0B), size: 22),
+              SizedBox(width: 8),
+              Text('No se pudo verificar tu ubicación',
+                  style: TextStyle(color: Colors.white, fontSize: 15)),
+            ],
+          ),
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar',
+                  style: TextStyle(color: Color(0xFF6B7280))),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF59E0B),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+              child: const Text('Continuar igual'),
+            ),
+          ],
+        ),
+      );
+      return continuar == true;
+    }
+
+    if (resultado.dentroDelRango) return true;
+
+    if (!mounted) return false;
+
+    // Fuera del radio permitido → advertencia, pero se permite continuar.
+    final continuar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF111827),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFF59E0B), size: 22),
+            SizedBox(width: 8),
+            Text('Estás lejos del paradero',
+                style: TextStyle(color: Colors.white, fontSize: 15)),
+          ],
+        ),
+        content: Text(
+          'Estás a ${resultado.distanciaMetros.toStringAsFixed(0)} metros '
+              'del punto de inicio habitual. ¿Deseas iniciar el viaje de todas formas?',
+          style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar',
+                style: TextStyle(color: Color(0xFF6B7280))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF59E0B),
+              foregroundColor: Colors.white,
+              shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            child: const Text('Continuar igual'),
+          ),
+        ],
+      ),
+    );
+
+    return continuar == true;
+  }
+
+  // ✅ Sin diálogo de ruta — solo inicia directo (con verificación de GPS)
   Future<void> _iniciarViaje(Map<String, dynamic> conductorData) async {
     setState(() => _iniciando = true);
+
+    final continuar = await _verificarUbicacionConAdvertencia();
+    if (!continuar) {
+      if (mounted) setState(() => _iniciando = false);
+      return;
+    }
+
     try {
       final viajeId = await _tripService.iniciarViaje(
         conductorData: conductorData,
@@ -94,6 +204,7 @@ class _DriverHomeViewState extends State<DriverHomeView> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
+      drawer: const DriverDrawer(currentRoute: 'home'),
       appBar: AppBar(
         backgroundColor: const Color(0xFF111827),
         elevation: 0,
@@ -302,7 +413,7 @@ class _DriverHomeViewState extends State<DriverHomeView> {
                 color: Colors.white, strokeWidth: 2.5))
             : const Icon(Icons.play_circle_outline_rounded, size: 24),
         label: Text(
-          _iniciando ? 'Iniciando...' : 'Poner colectivo disponible',
+          _iniciando ? 'Verificando ubicación...' : 'Poner colectivo disponible',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
