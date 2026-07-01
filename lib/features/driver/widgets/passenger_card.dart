@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import '../../../app_theme.dart';
+import '../../passenger/comprobante_pago_view.dart';
 
 Widget passengerCard({
   required String viajeId,
@@ -15,124 +18,99 @@ Widget passengerCard({
         .limit(1)
         .snapshots(),
     builder: (context, snap) {
-      final reservaData = snap.hasData && snap.data!.docs.isNotEmpty
+      final data = snap.hasData && snap.data!.docs.isNotEmpty
           ? (snap.data!.docs.first.data() as Map<String, dynamic>)
           : null;
-      final estadoReserva = reservaData?['estado'] ?? 'confirmada';
-      final abordado = estadoReserva == 'abordado';
-      final codigo = reservaData?['codigoVerificacion'] ?? '-----';
+      
+      final estado = data?['estado'] ?? 'confirmada';
+      final abordado = estado == 'abordado';
+      final finalizado = estado == 'finalizada' || estado == 'calificada';
 
-      return Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF111827),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-              color: abordado
-                  ? const Color(0xFF10B981).withValues(alpha: 0.4)
-                  : const Color(0xFF1F2937)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                      color: (abordado
-                          ? const Color(0xFF10B981)
-                          : const Color(0xFF1E6BFF))
-                          .withValues(alpha: 0.15),
-                      shape: BoxShape.circle),
-                  child: Icon(
-                      abordado
-                          ? Icons.how_to_reg_rounded
-                          : Icons.person,
-                      color: abordado
-                          ? const Color(0xFF10B981)
-                          : const Color(0xFF1E6BFF),
-                      size: 20)),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(pasajero['nombre'] ?? '-',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Text(
-                            'Asiento ${pasajero['asiento']} · ${pasajero['paradero'] ?? '-'}',
-                            style: const TextStyle(
-                                color: Color(0xFF6B7280), fontSize: 12)),
-                      ])),
-              abordado
-                  ? Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFF10B981)
-                          .withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: const Text('Abordado',
-                      style: TextStyle(
-                          color: Color(0xFF10B981),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600)))
-                  : ElevatedButton(
-                onPressed: onValidar,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E6BFF),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  elevation: 0,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text('Verificar',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600)),
+      return Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: CircleAvatar(
+              backgroundColor: finalizado ? Colors.grey[100] : (abordado ? CabifyColors.success.withValues(alpha: 0.1) : CabifyColors.primary.withValues(alpha: 0.1)),
+              child: Icon(
+                finalizado ? Icons.check_circle : (abordado ? Icons.how_to_reg : Icons.person),
+                color: finalizado ? Colors.grey : (abordado ? CabifyColors.success : CabifyColors.primary),
               ),
-            ]),
-            if (!abordado) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A0E1A),
-                  borderRadius: BorderRadius.circular(8),
-                  border:
-                  Border.all(color: const Color(0xFF1F2937)),
-                ),
-                child: Row(children: [
-                  const Icon(Icons.vpn_key_rounded,
-                      color: Color(0xFF6B7280), size: 14),
-                  const SizedBox(width: 8),
-                  const Text('Código: ',
-                      style: TextStyle(
-                          color: Color(0xFF6B7280), fontSize: 12)),
-                  Text(codigo,
-                      style: const TextStyle(
-                          color: Color(0xFF1E6BFF),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 4)),
-                ]),
-              ),
-            ],
-          ],
+            ),
+            title: Text(pasajero['nombre'] ?? 'Pasajero', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                // CP01: Mostrar DNI y Paradero
+                Text('DNI: ${pasajero['dni'] ?? "-"} · Asiento ${pasajero['asiento']}', 
+                  style: const TextStyle(fontSize: 11, color: CabifyColors.textSecondary)),
+                Text('Recojo: ${pasajero['paradero'] ?? "-"}', 
+                  style: const TextStyle(fontSize: 11, color: CabifyColors.primary, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (data != null)
+                  IconButton(
+                    icon: const Icon(Icons.receipt_long_rounded, color: CabifyColors.textSecondary, size: 20),
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ComprobantePagoView(reservaId: snap.data!.docs.first.id))),
+                  ),
+                if (!finalizado && !abordado)
+                  IconButton(
+                    icon: const Icon(Icons.location_on_rounded, color: CabifyColors.primary, size: 20),
+                    onPressed: () => _notificarLlegada(context, pasajero['nombre'] ?? 'Pasajero'),
+                  ),
+                _buildAction(finalizado, abordado, onValidar),
+              ],
+            ),
+          ),
         ),
       );
     },
+  );
+}
+
+Future<void> _notificarLlegada(BuildContext context, String nombrePasajero) async {
+  try {
+    await FirebaseFunctions.instanceFor(region: 'us-central1').httpsCallable('notificarLlegadaManual').call({
+      'nombrePasajero': nombrePasajero,
+    });
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notificación de llegada enviada'), backgroundColor: CabifyColors.success)
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: CabifyColors.error)
+      );
+    }
+  }
+}
+
+Widget _buildAction(bool finalizado, bool abordado, VoidCallback onValidar) {
+  if (finalizado) {
+    return const Text('YA BAJÓ', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 10));
+  }
+  if (abordado) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: CabifyColors.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+      child: const Text('ABORDADO', style: TextStyle(color: CabifyColors.success, fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+  return ElevatedButton(
+    onPressed: onValidar,
+    style: ElevatedButton.styleFrom(
+      minimumSize: const Size(80, 36),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+    ),
+    child: const Text('VERIFICAR'),
   );
 }

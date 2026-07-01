@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import '../../../services/auth_service.dart';
 import 'otp_verification_view.dart';
+import '../../../app_theme.dart';
 
 class RegisterView extends StatefulWidget {
   final String rolInicial;
@@ -34,6 +37,10 @@ class _RegisterViewState extends State<RegisterView> {
   final _modeloCtrl = TextEditingController();
   final _marcaCtrl = TextEditingController();
   final _colorCtrl = TextEditingController();
+
+  File? _fotoPerfil;
+  File? _fotoVehiculo;
+  final _picker = ImagePicker();
 
   bool _loading = false;
   bool _obscurePass = true;
@@ -71,10 +78,9 @@ class _RegisterViewState extends State<RegisterView> {
       lastDate: DateTime.now().subtract(const Duration(days: 365 * 18)),
       builder: (context, child) =>
           Theme(
-            data: ThemeData.dark().copyWith(
-              colorScheme: const ColorScheme.dark(
-                primary: Color(0xFF1E6BFF),
-                surface: Color(0xFF111827),
+            data: ThemeData.light().copyWith(
+              colorScheme: const ColorScheme.light(
+                primary: CabifyColors.primary,
               ),
             ),
             child: child!,
@@ -86,6 +92,54 @@ class _RegisterViewState extends State<RegisterView> {
           .toString()
           .padLeft(2, '0')}/${picked.year}';
     }
+  }
+
+  Future<void> _pickImage(bool esVehiculo) async {
+    final pickedFile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
+    if (pickedFile != null) {
+      setState(() {
+        if (esVehiculo) {
+          _fotoVehiculo = File(pickedFile.path);
+        } else {
+          _fotoPerfil = File(pickedFile.path);
+        }
+      });
+    }
+  }
+
+  Widget _buildPhotoSelector(String label, File? image, bool esVehiculo) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () => _pickImage(esVehiculo),
+          child: Container(
+            width: double.infinity,
+            height: 120,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: image != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(image, fit: BoxFit.cover),
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_a_photo_outlined, color: Theme.of(context).primaryColor),
+                      const SizedBox(height: 4),
+                      const Text('Toca para subir foto', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                    ],
+                  ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _submit() async {
@@ -110,71 +164,87 @@ class _RegisterViewState extends State<RegisterView> {
     }
 
     // Verificar duplicados
-    final celularRegistrado = await _authService.isCelularRegistered(celular);
-    if (!mounted) return;
-    if (celularRegistrado) {
-      setState(() {
-        _loading = false;
-        _errorMessage = 'Ya existe una cuenta con ese número de celular.';
-      });
-      return;
-    }
-
-    final dniRegistrado = await _authService.isDniRegistered(
-        _dniCtrl.text.trim());
-    if (!mounted) return;
-    if (dniRegistrado) {
-      setState(() {
-        _loading = false;
-        _errorMessage = 'Ya existe una cuenta con ese DNI.';
-      });
-      return;
-    }
-
-    if (_rolSeleccionado == 'conductor') {
-      final placaRegistrada = await _authService
-          .isPlacaRegistered(_placaCtrl.text.trim().toUpperCase());
+    try {
+      final celularRegistrado = await _authService.isCelularRegistered(celular);
       if (!mounted) return;
-      if (placaRegistrada) {
+      if (celularRegistrado) {
         setState(() {
           _loading = false;
-          _errorMessage = 'Ya existe una cuenta con esa placa.';
+          _errorMessage = 'Este número de celular ya tiene una cuenta registrada.';
         });
         return;
       }
+
+      final dniRegistrado = await _authService.isDniRegistered(_dniCtrl.text.trim());
+      if (!mounted) return;
+      if (dniRegistrado) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'Este DNI ya tiene una cuenta registrada.';
+        });
+        return;
+      }
+
+      if (_rolSeleccionado == 'conductor') {
+        // CP02 - Foto obligatoria
+        if (_fotoPerfil == null) {
+          setState(() {
+            _loading = false;
+            _errorMessage = 'La fotografía es obligatoria para completar el registro.';
+          });
+          return;
+        }
+
+        final placaRegistrada = await _authService.isPlacaRegistered(_placaCtrl.text.trim().toUpperCase());
+        if (!mounted) return;
+        if (placaRegistrada) {
+          setState(() {
+            _loading = false;
+            _errorMessage = 'La placa del vehículo ya está registrada en el sistema.';
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'No se pudo conectar. Verifica tu conexión a internet e inténtalo de nuevo.';
+        });
+      }
+      return;
     }
 
-    // MODO PRUEBA: saltar envío de OTP, ir directo a pantalla de verificación
     setState(() => _loading = false);
-
     if (!mounted) return;
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            OtpVerificationView(
-              verificationId: 'test-verification-id',
-              phoneNumber: '+51$celular',
-              userData: {
-                'rol': _rolSeleccionado,
-                'dni': _dniCtrl.text.trim(),
-                'nombre': _nombreCtrl.text.trim(),
-                'apellido': _apellidoCtrl.text.trim(),
-                'celular': celular,
-                'email': _emailCtrl.text.trim(),
-                'password': _passCtrl.text,
-                'fechaNacimiento': _fechaCtrl.text,
-                if (_rolSeleccionado == 'conductor') ...{
-                  'numeroLicencia': _licenciaCtrl.text.trim(),
-                  'placa': _placaCtrl.text.trim().toUpperCase(),
-                  'capacidad': _capacidadCtrl.text.trim(),
-                  'modelo': _modeloCtrl.text.trim(),
-                  'marca': _marcaCtrl.text.trim(),
-                  'color': _colorCtrl.text.trim(),
-                },
-              },
-            ),
+        builder: (_) => OtpVerificationView(
+          verificationId: 'test-verification-id',
+          phoneNumber: '+51$celular',
+          userData: {
+            'rol': _rolSeleccionado,
+            'dni': _dniCtrl.text.trim(),
+            'nombre': _nombreCtrl.text.trim(),
+            'apellido': _apellidoCtrl.text.trim(),
+            'celular': celular,
+            'email': _emailCtrl.text.trim(),
+            'password': _passCtrl.text,
+            'fechaNacimiento': _fechaCtrl.text,
+            if (_rolSeleccionado == 'conductor') ...{
+              'numeroLicencia': _licenciaCtrl.text.trim(),
+              'placa': _placaCtrl.text.trim().toUpperCase(),
+              'capacidad': _capacidadCtrl.text.trim(),
+              'modelo': _modeloCtrl.text.trim(),
+              'marca': _marcaCtrl.text.trim(),
+              'color': _colorCtrl.text.trim(),
+              'fotoPerfil': _fotoPerfil,
+              'fotoVehiculo': _fotoVehiculo,
+            },
+          },
+        ),
       ),
     );
   }
@@ -182,80 +252,56 @@ class _RegisterViewState extends State<RegisterView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-              Icons.arrow_back_ios_new, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text('Crear cuenta',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600)),
-      ),
+      appBar: AppBar(title: const Text('Crear cuenta')),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Ingresa tus datos',
+                const Text('Ingresa tus datos para empezar',
                     style: TextStyle(color: Color(0xFF6B7280), fontSize: 14)),
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
 
                 if (_errorMessage != null) ...[
                   _errorBanner(_errorMessage!),
                   const SizedBox(height: 16),
                 ],
 
-                // Selector de rol
-                _buildLabel('Tipo de cuenta'),
-                const SizedBox(height: 8),
+                _buildLabel('TIPO DE CUENTA'),
+                const SizedBox(height: 12),
                 Container(
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF111827),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF1F2937)),
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
                     children: [
                       _rolButton('pasajero', 'Pasajero', Icons.person_outline),
-                      _rolButton(
-                          'conductor', 'Conductor', Icons.drive_eta_outlined),
+                      _rolButton('conductor', 'Conductor', Icons.drive_eta_outlined),
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
 
-                _seccionTitulo('Datos personales'),
-                const SizedBox(height: 16),
+                _seccionTitulo('DATOS PERSONALES'),
+                const SizedBox(height: 20),
 
-                _buildLabel('DNI '),
+                _buildLabel('DNI'),
                 const SizedBox(height: 8),
                 _buildField(
                   controller: _dniCtrl,
-                  hint: '',
+                  hint: '8 dígitos',
                   icon: Icons.badge_outlined,
                   keyboardType: TextInputType.number,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(8),
                   ],
-
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Ingresa tu documento';
-                    if (v.length != 8) return 'El DNI debe tener 8 dígitos';
-                    if (RegExp(r'^(\d)\1+$').hasMatch(v)) return 'DNI inválido';
-                    if (v == '12345678' || v == '87654321')
-                      return 'DNI inválido';
-                    return null;
-                  },
+                  validator: (v) => (v == null || v.length != 8) ? 'Ingresa 8 dígitos' : null,
                 ),
                 const SizedBox(height: 16),
 
@@ -265,27 +311,13 @@ class _RegisterViewState extends State<RegisterView> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildLabel('Nombre'),
+                          _buildLabel('NOMBRE'),
                           const SizedBox(height: 8),
                           _buildField(
                             controller: _nombreCtrl,
-                            hint: 'Juan',
+                            hint: 'Ej. Juan',
                             icon: Icons.person_outline,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                  RegExp(r"[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]")),
-                            ],
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return 'Requerido';
-                              if (v
-                                  .trim()
-                                  .length < 2) return 'Mínimo 2 caracteres';
-                              if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$")
-                                  .hasMatch(v)) return 'Solo letras';
-                              if (RegExp(r'^(.)\1+$').hasMatch(v.trim()))
-                                return 'Nombre inválido';
-                              return null;
-                            },
+                            validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
                           ),
                         ],
                       ),
@@ -295,27 +327,13 @@ class _RegisterViewState extends State<RegisterView> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildLabel('Apellido'),
+                          _buildLabel('APELLIDO'),
                           const SizedBox(height: 8),
                           _buildField(
                             controller: _apellidoCtrl,
-                            hint: 'Pérez',
+                            hint: 'Ej. Pérez',
                             icon: Icons.person_outline,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                  RegExp(r"[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]")),
-                            ],
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return 'Requerido';
-                              if (v
-                                  .trim()
-                                  .length < 2) return 'Mínimo 2 caracteres';
-                              if (!RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$")
-                                  .hasMatch(v)) return 'Solo letras';
-                              if (RegExp(r'^(.)\1+$').hasMatch(v.trim()))
-                                return 'Nombre inválido';
-                              return null;
-                            },
+                            validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
                           ),
                         ],
                       ),
@@ -324,98 +342,37 @@ class _RegisterViewState extends State<RegisterView> {
                 ),
                 const SizedBox(height: 16),
 
-                _buildLabel('Número de celular'),
+                _buildLabel('CELULAR'),
                 const SizedBox(height: 8),
-                TextFormField(
+                _buildField(
                   controller: _celularCtrl,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  hint: '9XXXXXXXX',
+                  icon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(9),
                   ],
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Requerido';
-                    if (v.length != 9) return '9 dígitos exactos';
-                    if (!v.startsWith('9')) return 'Debe empezar con 9';
-                    if (RegExp(r'^(\d)\1+$').hasMatch(v))
-                      return 'Número inválido';
-                    if (RegExp(r'(\d)\1{5,}').hasMatch(v))
-                      return 'Número inválido';
-                    if (v == '987654321' || v == '912345678')
-                      return 'Número inválido';
-                    return null;
-                  },
-                  decoration: InputDecoration(
-                    hintText: '9XXXXXXXX',
-                    hintStyle: const TextStyle(color: Color(0xFF4B5563)),
-                    prefixIcon: const Padding(
-                      padding: EdgeInsets.only(left: 12, right: 4),
-                      child: Text('+51 ',
-                          style: TextStyle(
-                              color: Color(0xFF6B7280), fontSize: 14)),
-                    ),
-                    prefixIconConstraints:
-                    const BoxConstraints(minWidth: 0, minHeight: 0),
-                    filled: true,
-                    fillColor: const Color(0xFF111827),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide:
-                      const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
-                    ),
-                    errorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: Color(0xFFFF3B30)),
-                    ),
-                    focusedErrorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide:
-                      const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
-                    ),
-                    errorStyle:
-                    const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 16),
+                  prefix: const Padding(
+                    padding: EdgeInsets.only(left: 12, right: 4),
+                    child: Text('+51 ', style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold)),
                   ),
+                  validator: (v) => (v == null || v.length != 9) ? '9 dígitos' : null,
                 ),
                 const SizedBox(height: 16),
 
-                _buildLabel('Correo electrónico'),
+                _buildLabel('CORREO ELECTRÓNICO'),
                 const SizedBox(height: 8),
                 _buildField(
                   controller: _emailCtrl,
-                  hint: 'ejemplo@correo.com',
+                  hint: 'usuario@email.com',
                   icon: Icons.email_outlined,
                   keyboardType: TextInputType.emailAddress,
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Requerido';
-                    final dominiosPermitidos = [
-                      'gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com',
-                      'icloud.com', 'live.com', 'me.com',
-                    ];
-                    if (!RegExp(r'^[\w\.-]+@[\w\.-]+\.\w{2,4}$').hasMatch(v))
-                      return 'Correo inválido';
-                    final dominio = v
-                        .split('@')
-                        .last
-                        .toLowerCase();
-                    if (!dominiosPermitidos.contains(dominio))
-                      return 'Solo se aceptan correos Gmail, Outlook, Yahoo o iCloud';
-                    return null;
-                  },
+                  validator: (v) => (v == null || !v.contains('@')) ? 'Email inválido' : null,
                 ),
                 const SizedBox(height: 16),
 
-                _buildLabel('Fecha de nacimiento'),
+                _buildLabel('FECHA DE NACIMIENTO'),
                 const SizedBox(height: 8),
                 GestureDetector(
                   onTap: _selectDate,
@@ -424,137 +381,58 @@ class _RegisterViewState extends State<RegisterView> {
                       controller: _fechaCtrl,
                       hint: 'DD/MM/AAAA',
                       icon: Icons.calendar_today_outlined,
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return 'Requerido';
-                        try {
-                          final parts = v.split('/');
-                          final fecha = DateTime(
-                            int.parse(parts[2]),
-                            int.parse(parts[1]),
-                            int.parse(parts[0]),
-                          );
-                          final hoy = DateTime.now();
-                          final edad = hoy.year - fecha.year -
-                              ((hoy.month < fecha.month ||
-                                  (hoy.month == fecha.month &&
-                                      hoy.day < fecha.day)) ? 1 : 0);
-                          if (edad < 18) return 'Debes ser mayor de 18 años';
-                          if (edad > 100) return 'Fecha inválida';
-                        } catch (_) {
-                          return 'Fecha inválida';
-                        }
-                        return null;
-                      },
-
+                      validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
 
                 if (_rolSeleccionado == 'conductor') ...[
-                  _buildLabel('Número de licencia'),
+                  _seccionTitulo('DATOS DEL CONDUCTOR'),
+                  const SizedBox(height: 20),
+                  
+                  _buildPhotoSelector('FOTO DE PERFIL', _fotoPerfil, false),
+                  const SizedBox(height: 16),
+                  _buildPhotoSelector('FOTO DEL VEHÍCULO', _fotoVehiculo, true),
+                  const SizedBox(height: 16),
+
+                  _buildLabel('NÚMERO DE LICENCIA'),
                   const SizedBox(height: 8),
                   _buildField(
                     controller: _licenciaCtrl,
                     hint: 'Q12345678',
                     icon: Icons.card_membership_outlined,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r"[A-Za-z0-9]")),
-                      LengthLimitingTextInputFormatter(9),
-                    ],
+                    textCapitalization: TextCapitalization.characters,
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Requerido';
-                      if (!RegExp(r'^[A-Za-z]\d{8}$').hasMatch(v))
-                        return 'Formato: Q12345678';
+                      // CP06 - Formato licencia (1 letra + 8 dígitos)
+                      if (!RegExp(r'^[A-Z]\d{8}$').hasMatch(v)) {
+                        return 'Formato inválido (Ej. Q12345678)';
+                      }
                       return null;
                     },
                   ),
                   const SizedBox(height: 16),
-                ],
 
-                _buildLabel('Contraseña'),
-                const SizedBox(height: 8),
-                _buildField(
-                  controller: _passCtrl,
-                  hint: '••••••••',
-                  icon: Icons.lock_outline,
-                  obscure: _obscurePass,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePass
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      color: const Color(0xFF6B7280),
-                      size: 20,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePass = !_obscurePass),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Requerido';
-                    if (v.length < 8) return 'Mínimo 8 caracteres';
-                    if (!RegExp(r'[A-Z]').hasMatch(v))
-                      return 'Debe tener al menos una mayúscula';
-                    if (!RegExp(r'[!@#\$%^&*(),.?":{}|<>]').hasMatch(v))
-                      return 'Debe tener al menos un símbolo (@, #, !)';
-                    if (RegExp(r'^(.)\1+$').hasMatch(v))
-                      return 'Contraseña muy débil';
-                    if (['123456', '654321', 'password', '000000'].contains(v))
-                      return 'Contraseña muy débil';
-                    return null;
-                  },
-                ),
-                ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: _passCtrl,
-                  builder: (context, value, _) {
-                    final pass = value.text;
-                    final tieneMayuscula = RegExp(r'[A-Z]').hasMatch(pass);
-                    final tieneSimbolo = RegExp(r'[!@#\$%^&*(),.?":{}|<>]')
-                        .hasMatch(pass);
-                    final tieneLength = pass.length >= 6;
-
-                    if (pass.isEmpty) return const SizedBox();
-
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Column(
-                        children: [
-                          _indicadorPass('Mínimo 6 caracteres', tieneLength),
-                          const SizedBox(height: 4),
-                          _indicadorPass(
-                              'Al menos una mayúscula', tieneMayuscula),
-                          const SizedBox(height: 4),
-                          _indicadorPass(
-                              'Al menos un símbolo (@, #, !...)', tieneSimbolo),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-
-                if (_rolSeleccionado == 'conductor') ...[
-                  const SizedBox(height: 24),
-                  _seccionTitulo('Datos del vehículo'),
-                  const SizedBox(height: 16),
-
-                  _buildLabel('Placa'),
+                  _buildLabel('PLACA'),
                   const SizedBox(height: 8),
                   _buildField(
                     controller: _placaCtrl,
                     hint: 'ABC-123',
                     icon: Icons.directions_car_outlined,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(
-                          RegExp(r"[A-Za-z0-9\-]")),
-                      LengthLimitingTextInputFormatter(7),
-                    ],
                     textCapitalization: TextCapitalization.characters,
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return 'Requerido';
-                      if (!RegExp(r'^[A-Za-z]{3}-?\d{3}$').hasMatch(v))
-                        return 'Formato: ABC-123';
-                      return null;
-                    },
+                    validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  _buildLabel('CAPACIDAD DE ASIENTOS'),
+                  const SizedBox(height: 8),
+                  _buildField(
+                    controller: _capacidadCtrl,
+                    hint: '4',
+                    icon: Icons.event_seat_outlined,
+                    keyboardType: TextInputType.number,
+                    validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
                   ),
                   const SizedBox(height: 16),
 
@@ -564,30 +442,13 @@ class _RegisterViewState extends State<RegisterView> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildLabel('Marca'),
+                            _buildLabel('MARCA'),
                             const SizedBox(height: 8),
                             _buildField(
                               controller: _marcaCtrl,
                               hint: 'Toyota',
-                              icon: Icons.directions_car_outlined,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                    RegExp(r"[a-zA-ZÀ-ÿ\s\-]")),
-                              ],
-                              validator: (v) {
-                                if (v == null || v
-                                    .trim()
-                                    .isEmpty) return 'Requerido';
-                                if (v
-                                    .trim()
-                                    .length < 2) return 'Mínimo 2 caracteres';
-                                if (!RegExp(r'^[a-zA-ZÀ-ÿ\s\-]+$').hasMatch(
-                                    v.trim())) {
-                                  return 'Solo letras';
-                                }
-                                return null;
-                              },
-
+                              icon: Icons.directions_car,
+                              validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
                             ),
                           ],
                         ),
@@ -597,26 +458,13 @@ class _RegisterViewState extends State<RegisterView> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildLabel('Modelo'),
+                            _buildLabel('MODELO'),
                             const SizedBox(height: 8),
                             _buildField(
                               controller: _modeloCtrl,
                               hint: 'Corolla',
-                              icon: Icons.directions_car_outlined,
-                              validator: (v) {
-                                if (v == null || v
-                                    .trim()
-                                    .isEmpty) return 'Requerido';
-                                if (v
-                                    .trim()
-                                    .length < 2) return 'Mínimo 2 caracteres';
-                                if (!RegExp(r'^[a-zA-Z0-9À-ÿ\s\-]+$').hasMatch(
-                                    v.trim())) {
-                                  return 'Formato inválido';
-                                }
-                                return null;
-                              },
-
+                              icon: Icons.directions_car,
+                              validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
                             ),
                           ],
                         ),
@@ -625,176 +473,37 @@ class _RegisterViewState extends State<RegisterView> {
                   ),
                   const SizedBox(height: 16),
 
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-
-                            _buildLabel('Color'),
-                            const SizedBox(height: 8),
-                            DropdownButtonFormField<String>(
-                              value: _colorCtrl.text.isEmpty ? null : _colorCtrl
-                                  .text,
-                              dropdownColor: const Color(0xFF111827),
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 15),
-                              decoration: InputDecoration(
-                                prefixIcon: const Icon(
-                                    Icons.color_lens_outlined,
-                                    color: Color(0xFF6B7280), size: 20),
-                                filled: true,
-                                fillColor: const Color(0xFF111827),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(
-                                      color: Color(0xFF1F2937)),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(
-                                      color: Color(0xFF1F2937)),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(
-                                      color: Color(0xFF1E6BFF), width: 1.5),
-                                ),
-                                errorBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(
-                                      color: Color(0xFFFF3B30)),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 16),
-                                errorStyle: const TextStyle(
-                                    color: Color(0xFFFF3B30), fontSize: 12),
-                              ),
-                              hint: const Text('Seleccionar',
-                                  style: TextStyle(color: Color(0xFF4B5563))),
-                              items: [
-                                'Blanco',
-                                'Negro',
-                                'Gris',
-                                'Plata',
-                                'Rojo',
-                                'Azul',
-                                'Verde',
-                                'Amarillo',
-                                'Naranja',
-                                'Marrón',
-                                'Beige',
-                                'Celeste',
-                              ].map((color) =>
-                                  DropdownMenuItem(
-                                    value: color,
-                                    child: Text(color),
-                                  )).toList(),
-                              onChanged: (v) =>
-                                  setState(() => _colorCtrl.text = v ?? ''),
-                              validator: (v) =>
-                              v == null || v.isEmpty
-                                  ? 'Requerido'
-                                  : null,
-                            ),
-
-
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildLabel('Capacidad'),
-                            const SizedBox(height: 8),
-                            DropdownButtonFormField<String>(
-                              value: _capacidadCtrl.text.isEmpty
-                                  ? null
-                                  : _capacidadCtrl.text,
-                              dropdownColor: const Color(0xFF111827),
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 15),
-                              decoration: InputDecoration(
-                                prefixIcon: const Icon(Icons.people_outline,
-                                    color: Color(0xFF6B7280), size: 20),
-                                filled: true,
-                                fillColor: const Color(0xFF111827),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(
-                                      color: Color(0xFF1F2937)),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(
-                                      color: Color(0xFF1F2937)),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(
-                                      color: Color(0xFF1E6BFF), width: 1.5),
-                                ),
-                                errorBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(
-                                      color: Color(0xFFFF3B30)),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 16),
-                                errorStyle: const TextStyle(
-                                    color: Color(0xFFFF3B30), fontSize: 12),
-                              ),
-                              hint: const Text('Seleccionar',
-                                  style: TextStyle(color: Color(0xFF4B5563))),
-                              items: ['4', '5', '6', '7', '8', '15']
-                                  .map((e) =>
-                                  DropdownMenuItem(
-                                    value: e,
-                                    child: Text('$e asientos'),
-                                  ))
-                                  .toList(),
-                              onChanged: (v) =>
-                                  setState(() => _capacidadCtrl.text = v ?? ''),
-                              validator: (v) =>
-                              v == null || v.isEmpty
-                                  ? 'Requerido'
-                                  : null,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                  _buildLabel('COLOR'),
+                  const SizedBox(height: 8),
+                  _buildField(
+                    controller: _colorCtrl,
+                    hint: 'Blanco',
+                    icon: Icons.palette_outlined,
+                    validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
                   ),
+                  const SizedBox(height: 16),
                 ],
 
-
-                const SizedBox(height: 32),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E6BFF),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      elevation: 0,
-                    ),
-                    child: _loading
-                        ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2.5))
-                        : const Text('Continuar y verificar',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600)),
+                _buildLabel('CONTRASEÑA'),
+                const SizedBox(height: 8),
+                _buildField(
+                  controller: _passCtrl,
+                  hint: 'Mínimo 8 caracteres',
+                  icon: Icons.lock_outline,
+                  obscure: _obscurePass,
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, color: const Color(0xFF6B7280), size: 20),
+                    onPressed: () => setState(() => _obscurePass = !_obscurePass),
                   ),
+                  validator: (v) => (v == null || v.length < 8) ? 'Contraseña muy corta' : null,
+                ),
+
+                const SizedBox(height: 40),
+                ElevatedButton(
+                  onPressed: _loading ? null : _submit,
+                  child: _loading 
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('CONTINUAR Y VERIFICAR'),
                 ),
                 const SizedBox(height: 24),
               ],
@@ -805,51 +514,30 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
-  Widget _seccionTitulo(String texto) =>
-      Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E6BFF).withOpacity(0.12),
-          borderRadius: BorderRadius.circular(8),
-          border:
-          Border.all(color: const Color(0xFF1E6BFF).withOpacity(0.3)),
-        ),
-        child: Text(texto,
-            style: const TextStyle(
-                color: Color(0xFF1E6BFF),
-                fontSize: 13,
-                fontWeight: FontWeight.w600)),
-      );
+  Widget _seccionTitulo(String texto) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(texto, style: const TextStyle(color: CabifyColors.primary, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1)),
+  );
 
   Widget _rolButton(String rol, String label, IconData icon) {
     final selected = _rolSeleccionado == rol;
     return Expanded(
       child: GestureDetector(
-        onTap: () =>
-            setState(() {
-              _rolSeleccionado = rol;
-              _errorMessage = null;
-            }),
-        child: Container(
+        onTap: () => setState(() { _rolSeleccionado = rol; _errorMessage = null; }),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: selected ? const Color(0xFF1E6BFF) : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: selected ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2))] : null,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon,
-                  color: selected ? Colors.white : const Color(0xFF6B7280),
-                  size: 18),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: TextStyle(
-                      color:
-                      selected ? Colors.white : const Color(0xFF6B7280),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500)),
+              Icon(icon, color: selected ? CabifyColors.primary : CabifyColors.textSecondary, size: 18),
+              const SizedBox(width: 8),
+              Text(label, style: TextStyle(color: selected ? CabifyColors.primary : CabifyColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -857,35 +545,22 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
-  Widget _errorBanner(String msg) =>
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFF3B30).withOpacity(0.12),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: const Color(0xFFFF3B30).withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline,
-                color: Color(0xFFFF3B30), size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(msg,
-                  style: const TextStyle(
-                      color: Color(0xFFFF3B30), fontSize: 13)),
-            ),
-          ],
-        ),
-      );
+  Widget _errorBanner(String msg) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(color: const Color(0xFFEF4444).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+    child: Row(
+      children: [
+        const Icon(Icons.error_outline, color: Color(0xFFEF4444), size: 20),
+        const SizedBox(width: 12),
+        Expanded(child: Text(msg, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 13))),
+      ],
+    ),
+  );
 
-  Widget _buildLabel(String text) =>
-      Text(text,
-          style: const TextStyle(
-              color: Color(0xFFD1D5DB),
-              fontSize: 13,
-              fontWeight: FontWeight.w500));
+  Widget _buildLabel(String text) => Padding(
+    padding: const EdgeInsets.only(left: 4),
+    child: Text(text, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+  );
 
   Widget _buildField({
     required TextEditingController controller,
@@ -905,63 +580,13 @@ class _RegisterViewState extends State<RegisterView> {
       obscureText: obscure,
       inputFormatters: inputFormatters,
       textCapitalization: textCapitalization,
-      style: const TextStyle(color: Colors.white, fontSize: 15),
+      style: const TextStyle(color: Color(0xFF111827), fontSize: 15),
       validator: validator,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF4B5563)),
-        prefixIcon: prefix ??
-            Icon(icon, color: const Color(0xFF6B7280), size: 20),
+        prefixIcon: prefix ?? Icon(icon, color: const Color(0xFF6B7280), size: 20),
         suffixIcon: suffixIcon,
-        filled: true,
-        fillColor: const Color(0xFF111827),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF1F2937)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF1F2937)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFF1E6BFF), width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFFF3B30)),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide:
-          const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
-        ),
-        errorStyle:
-        const TextStyle(color: Color(0xFFFF3B30), fontSize: 12),
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
-    );
-  }
-
-  Widget _indicadorPass(String texto, bool cumple) {
-    return Row(
-      children: [
-        Icon(
-          cumple ? Icons.check_circle_rounded : Icons.cancel_rounded,
-          color: cumple ? const Color(0xFF10B981) : const Color(0xFFFF3B30),
-          size: 14,
-        ),
-        const SizedBox(width: 6),
-        Text(
-          texto,
-          style: TextStyle(
-            color: cumple ? const Color(0xFF10B981) : const Color(0xFFFF3B30),
-            fontSize: 12,
-          ),
-        ),
-      ],
     );
   }
 }

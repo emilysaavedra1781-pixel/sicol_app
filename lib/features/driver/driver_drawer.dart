@@ -2,146 +2,135 @@ import 'package:flutter/material.dart';
 import 'driver_home_view.dart';
 import 'driver_ingresos_view.dart';
 import 'driver_historial_viajes_view.dart';
+import 'driver_perfil_view.dart';
 import '../shared/reportar_incidencia_view.dart';
 import '../shared/mis_incidencias_view.dart';
+import '../../services/trip_service.dart';
+import '../../widgets/logout_helper.dart';
 
-/// Menú lateral fijo del conductor — acceso siempre disponible
-/// a Home, Mis viajes (historial) y Mis ingresos.
 class DriverDrawer extends StatelessWidget {
-  /// Ruta actual para resaltar el ítem activo: 'home' | 'viajes' | 'ingresos'
   final String currentRoute;
 
   const DriverDrawer({super.key, required this.currentRoute});
 
   void _ir(BuildContext context, String route, Widget destino) {
-    Navigator.pop(context); // cierra el drawer
-    if (route == currentRoute) return; // ya está en esa pantalla
-    Navigator.pushReplacement(
+    Navigator.pop(context);
+    if (route == currentRoute) return;
+    
+    // Si estamos navegando desde el Home, usamos push para permitir volver con el botón atrás.
+    // Si ya estamos en una sub-pantalla, reemplazamos para no acumular stack.
+    if (currentRoute == 'home') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => destino),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => destino),
+      );
+    }
+  }
+
+  Future<void> _abrirReportarIncidencia(BuildContext context) async {
+    final tripService = TripService();
+    final viajeActivo = await tripService.getViajeActivo();
+    
+    if (!context.mounted) return;
+    Navigator.pop(context);
+
+    if (viajeActivo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Esta función solo está disponible durante un viaje en curso.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => destino),
+      MaterialPageRoute(
+        builder: (_) => ReportarIncidenciaView(
+          rolUsuario: 'conductor',
+          viajeId: viajeActivo.id,
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Drawer(
-      backgroundColor: const Color(0xFF111827),
+      backgroundColor: Colors.white,
       child: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF1E6BFF), Color(0xFF0A4BCC)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor,
               ),
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.drive_eta_rounded, color: Colors.white, size: 32),
-                  SizedBox(height: 10),
-                  Text('SICOL — Conductor',
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: Colors.white24,
+                    child: Icon(Icons.drive_eta, color: Colors.white, size: 30),
+                  ),
+                  SizedBox(height: 16),
+                  Text('CONDUCTOR',
                       style: TextStyle(
                           color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700)),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1)),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            _item(
-              context,
-              icon: Icons.home_outlined,
-              label: 'Inicio',
-              route: 'home',
-              onTap: () =>
-                  _ir(context, 'home', const DriverHomeView()),
-            ),
-            _item(
-              context,
-              icon: Icons.route_outlined,
-              label: 'Mis viajes',
-              route: 'viajes',
-              onTap: () => _ir(
-                  context, 'viajes', const DriverHistorialViajesView()),
-            ),
-            _item(
-              context,
-              icon: Icons.payments_outlined,
-              label: 'Mis ingresos',
-              route: 'ingresos',
-              onTap: () =>
-                  _ir(context, 'ingresos', const DriverIngresosView()),
-            ),
-            _item(
-              context,
-              icon: Icons.report_problem_outlined,
-              label: 'Reportar incidencia',
-              route: 'incidencia',
-              onTap: () {
-                Navigator.pop(context); // cierra el drawer
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ReportarIncidenciaView(
-                      rolUsuario: 'conductor',
-                    ),
-                  ),
-                );
-              },
-            ),
-            _item(
-              context,
-              icon: Icons.history_rounded,
-              label: 'Mis incidencias',
-              route: 'mis_incidencias',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const MisIncidenciasView(),
-                  ),
-                );
-              },
-            ),
+            const SizedBox(height: 16),
+            _item(context, icon: Icons.home_rounded, label: 'INICIO', route: 'home', 
+                onTap: () => _ir(context, 'home', const DriverHomeView())),
+            _item(context, icon: Icons.route_rounded, label: 'MIS VIAJES', route: 'viajes', 
+                onTap: () => _ir(context, 'viajes', const DriverHistorialViajesView())),
+            _item(context, icon: Icons.payments_rounded, label: 'MIS INGRESOS', route: 'ingresos', 
+                onTap: () => _ir(context, 'ingresos', const DriverIngresosView())),
+            _item(context, icon: Icons.person_rounded, label: 'MI PERFIL', route: 'perfil', 
+                onTap: () => _ir(context, 'perfil', const DriverPerfilView())),
+            const Divider(indent: 20, endIndent: 20, height: 32),
+            _item(context, icon: Icons.report_problem_outlined, label: 'REPORTAR INCIDENCIA', route: 'incidencia', 
+                onTap: () => _abrirReportarIncidencia(context)),
+            _item(context, icon: Icons.history_rounded, label: 'MIS INCIDENCIAS', route: 'mis_incidencias', 
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const MisIncidenciasView()));
+                }),
+            const Spacer(),
+            _item(context, icon: Icons.logout_rounded, label: 'CERRAR SESIÓN', route: 'logout', 
+                onTap: () => LogoutHelper.showLogoutDialog(context)),
+            const SizedBox(height: 16),
           ],
         ),
       ),
     );
   }
 
-  Widget _item(
-      BuildContext context, {
-        required IconData icon,
-        required String label,
-        required String route,
-        required VoidCallback onTap,
-      }) {
+  Widget _item(BuildContext context, {required IconData icon, required String label, required String route, required VoidCallback onTap}) {
     final activo = route == currentRoute;
-    final color = activo ? const Color(0xFF1E6BFF) : const Color(0xFF9CA3AF);
+    final primary = Theme.of(context).primaryColor;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      decoration: BoxDecoration(
-        color: activo ? const Color(0xFF1E6BFF).withValues(alpha: 0.1) : null,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ListTile(
-        leading: Icon(icon, color: color, size: 22),
-        title: Text(label,
-            style: TextStyle(
-                color: activo ? Colors.white : const Color(0xFFD1D5DB),
-                fontWeight: activo ? FontWeight.w600 : FontWeight.w400,
-                fontSize: 14)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        onTap: onTap,
-      ),
+    return ListTile(
+      leading: Icon(icon, color: activo ? primary : const Color(0xFF6B7280)),
+      title: Text(label,
+          style: TextStyle(
+              color: activo ? primary : const Color(0xFF111827),
+              fontWeight: activo ? FontWeight.w800 : FontWeight.w600,
+              fontSize: 12,
+              letterSpacing: 0.5)),
+      onTap: onTap,
     );
   }
 }

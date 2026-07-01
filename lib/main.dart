@@ -3,13 +3,13 @@ import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'core/theme/app_colors.dart';
+import 'services/notification_service.dart';
+import 'app_theme.dart';
 import 'features/auth/login/login_view.dart';
 import 'features/passenger/passenger_home_view.dart';
 import 'features/driver/driver_pending_view.dart';
 import 'features/driver/driver_home_view.dart';
 import 'features/admin/admin_home_view.dart';
-import 'services/notification_service.dart';
 
 /// Clave global de navegación — permite mostrar SnackBars/diálogos y
 /// navegar desde fuera del árbol de widgets (por ejemplo, al recibir
@@ -44,13 +44,7 @@ class MyApp extends StatelessWidget {
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'SICOL',
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: AppColors.background,
-        colorScheme: const ColorScheme.dark(
-          primary: AppColors.primary,
-          surface: AppColors.surface,
-        ),
-      ),
+      theme: CabifyTheme.lightTheme,
       home: const AuthGate(),
     );
   }
@@ -84,15 +78,31 @@ class AuthGate extends StatelessWidget {
               return _loading();
             }
 
+            // Si no existe en usuarios, buscamos en admins
             if (!firestoreSnap.hasData || !firestoreSnap.data!.exists) {
-              FirebaseAuth.instance.signOut();
-              return const LoginView();
+              return FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance.collection('admins').doc(uid).get(),
+                builder: (context, adminSnap) {
+                  if (adminSnap.connectionState == ConnectionState.waiting) return _loading();
+                  
+                  if (!adminSnap.hasData || !adminSnap.data!.exists) {
+                    FirebaseAuth.instance.signOut();
+                    return const LoginView();
+                  }
+
+                  // Registrar token para admin
+                  NotificationService().registrarToken();
+                  return const AdminHomeView();
+                },
+              );
             }
 
-            final data =
-            firestoreSnap.data!.data() as Map<String, dynamic>;
+            final data = firestoreSnap.data!.data() as Map<String, dynamic>;
             final rol = data['rol'] ?? '';
             final estado = data['estado'] ?? '';
+
+            // Registrar token para usuario/conductor
+            NotificationService().registrarToken();
 
             switch (rol) {
               case 'pasajero':
@@ -117,9 +127,8 @@ class AuthGate extends StatelessWidget {
   }
 
   Widget _loading() => const Scaffold(
-    backgroundColor: Color(0xFF0A0E1A),
     body: Center(
-      child: CircularProgressIndicator(color: Color(0xFF1E6BFF)),
+      child: CircularProgressIndicator(),
     ),
   );
 }

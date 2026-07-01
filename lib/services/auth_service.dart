@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:io';
 
 
 class AuthService {
@@ -103,7 +105,16 @@ await _auth.verifyPhoneNumber(
       'creadoEn': FieldValue.serverTimestamp(),
     });
   }
-  /// Registro conductor (RF53)
+  Future<String?> uploadImage(File image, String path) async {
+    try {
+      final ref = FirebaseStorage.instance.ref().child(path);
+      await ref.putFile(image);
+      return await ref.getDownloadURL();
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<void> registerConductor({
     required String dni,
     required String nombre,
@@ -118,6 +129,8 @@ await _auth.verifyPhoneNumber(
     required String modelo,
     required String marca,
     required String color,
+    File? fotoPerfil,
+    File? fotoVehiculo,
   }) async {
     final emailAuth = '$celular@sicol.pe';
     await _auth.createUserWithEmailAndPassword(
@@ -125,6 +138,17 @@ await _auth.verifyPhoneNumber(
       password: password,
     );
     final uid = _auth.currentUser!.uid;
+
+    String? fotoUrl;
+    if (fotoPerfil != null) {
+      fotoUrl = await uploadImage(fotoPerfil, 'usuarios/$uid/perfil.jpg');
+    }
+
+    String? fotoVehiculoUrl;
+    if (fotoVehiculo != null) {
+      fotoVehiculoUrl = await uploadImage(fotoVehiculo, 'usuarios/$uid/vehiculo.jpg');
+    }
+
     await _db.collection('usuarios').doc(uid).set({
       'uid': uid,
       'dni': dni,
@@ -132,10 +156,11 @@ await _auth.verifyPhoneNumber(
       'apellido': apellido,
       'celular': celular,
       'email': email,
+      'fotoUrl': fotoUrl,
       'fechaNacimiento': fechaNacimiento,
       'numeroLicencia': numeroLicencia,
       'rol': 'conductor',
-      'estado': 'pendiente',
+      'estado': 'pendiente_aprobacion',
       'codigoConductor': null,
       'bloqueado': false,
       'intentosFallidos': 0,
@@ -146,6 +171,7 @@ await _auth.verifyPhoneNumber(
         'modelo': modelo,
         'marca': marca,
         'color': color,
+        'fotoVehiculoUrl': fotoVehiculoUrl,
       },
     });
   }
@@ -171,7 +197,7 @@ await _auth.verifyPhoneNumber(
     final userDoc = query.docs.first;
     final data = userDoc.data();
 
-    if (data['bloqueado'] == true) {
+    if (data['bloqueado'] == true || data['estado'] == 'bloqueado') {
       return {'success': false, 'error': 'cuenta_bloqueada'};
     }
 
@@ -185,16 +211,19 @@ await _auth.verifyPhoneNumber(
     } on FirebaseAuthException {
       final intentos = (data['intentosFallidos'] ?? 0) + 1;
       final Map<String, dynamic> update = {'intentosFallidos': intentos};
+      
       if (intentos >= 3) {
         update['bloqueado'] = true;
+        update['estado'] = 'bloqueado'; // CP01
+        update['intentosFallidos'] = 0; // CP01: Resetear tras bloquear
         await userDoc.reference.update(update);
         return {'success': false, 'error': 'cuenta_bloqueada'};
       }
+
       await userDoc.reference.update(update);
       return {
         'success': false,
         'error': 'credenciales_invalidas',
-        'intentosRestantes': 3 - intentos,
       };
     }
   }
@@ -218,11 +247,11 @@ await _auth.verifyPhoneNumber(
     final userDoc = query.docs.first;
     final data = userDoc.data();
 
-    if (data['bloqueado'] == true) {
+    if (data['bloqueado'] == true || data['estado'] == 'bloqueado') {
       return {'success': false, 'error': 'cuenta_bloqueada'};
     }
 
-    if (data['estado'] == 'pendiente') {
+    if (data['estado'] == 'pendiente' || data['estado'] == 'pendiente_aprobacion') {
       return {'success': false, 'error': 'cuenta_pendiente'};
     }
 
@@ -240,16 +269,19 @@ await _auth.verifyPhoneNumber(
     } on FirebaseAuthException {
       final intentos = (data['intentosFallidos'] ?? 0) + 1;
       final Map<String, dynamic> update = {'intentosFallidos': intentos};
+      
       if (intentos >= 3) {
         update['bloqueado'] = true;
+        update['estado'] = 'bloqueado'; // CP01
+        update['intentosFallidos'] = 0; // CP01: Resetear tras bloquear
         await userDoc.reference.update(update);
         return {'success': false, 'error': 'cuenta_bloqueada'};
       }
+
       await userDoc.reference.update(update);
       return {
         'success': false,
         'error': 'credenciales_invalidas',
-        'intentosRestantes': 3 - intentos,
       };
     }
   }
@@ -270,11 +302,25 @@ await _auth.verifyPhoneNumber(
     }
 
     final data = query.docs.first.data();
+    final email = data['email'];
 
-    if (data['password'] == password) {
-      return {'success': true, 'rol': 'admin'};
+    if (email == null) {
+      // Si no tiene email, usamos la validación por campo password (legacy/pruebas)
+      if (data['password'] == password) {
+        return {'success': true, 'rol': 'admin'};
+      }
+      return {'success': false, 'error': 'credenciales_invalidas'};
     }
-    return {'success': false, 'error': 'credenciales_invalidas'};
+
+    try {
+      await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return {'success': true, 'rol': 'admin'};
+    } on FirebaseAuthException {
+      return {'success': false, 'error': 'credenciales_invalidas'};
+    }
   }
 
   // ─── RF03/RF46: Recuperación contraseña ──────────────────────────────────
@@ -287,6 +333,7 @@ await _auth.verifyPhoneNumber(
         .get();
     if (query.docs.isNotEmpty) {
       await query.docs.first.reference.update({
+        'estado': 'activo',
         'bloqueado': false,
         'intentosFallidos': 0,
       });
@@ -299,7 +346,7 @@ await _auth.verifyPhoneNumber(
     return _db
         .collection('usuarios')
         .where('rol', isEqualTo: 'conductor')
-        .where('estado', isEqualTo: 'pendiente')
+        .where('estado', whereIn: ['pendiente', 'pendiente_aprobacion'])
         .snapshots();
   }
 
@@ -328,6 +375,12 @@ await _auth.verifyPhoneNumber(
     await _db.collection('usuarios').doc(uid).update({
       'estado': 'rechazado',
       'rechazadoEn': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> updateMpCollectorId(String uid, String collectorId) async {
+    await _db.collection('usuarios').doc(uid).update({
+      'mp_collector_id': collectorId,
     });
   }
 

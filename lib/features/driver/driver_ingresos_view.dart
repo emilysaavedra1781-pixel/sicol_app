@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/trip_service.dart';
 import 'driver_drawer.dart';
+import '../../app_theme.dart';
 
 /// RF37 — Reporte de Ingresos del Conductor por Viaje
 class DriverIngresosView extends StatefulWidget {
@@ -67,26 +68,30 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: Colors.white,
       drawer: const DriverDrawer(currentRoute: 'ingresos'),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111827),
+        backgroundColor: Colors.white,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: CabifyColors.primary),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: const Text('Mis ingresos',
             style: TextStyle(
-                color: Colors.white,
+                color: CabifyColors.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600)),
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_alt_outlined,
-                color: Color(0xFF1E6BFF)),
+                color: CabifyColors.primary),
             tooltip: 'Filtrar por fecha',
             onPressed: _seleccionarRango,
           ),
           if (_rangoFechas != null)
             IconButton(
-              icon: const Icon(Icons.close_rounded, color: Color(0xFF6B7280)),
+              icon: const Icon(Icons.close_rounded, color: CabifyColors.textSecondary),
               tooltip: 'Quitar filtro',
               onPressed: _limpiarFiltro,
             ),
@@ -97,13 +102,13 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
-                child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
+                child: CircularProgressIndicator(color: CabifyColors.primary));
           }
 
           if (snapshot.hasError) {
             return Center(
               child: Text('Error al cargar ingresos: ${snapshot.error}',
-                  style: const TextStyle(color: Colors.white)),
+                  style: const TextStyle(color: CabifyColors.textPrimary)),
             );
           }
 
@@ -112,8 +117,8 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
 
           // EA01 — Sin ingresos registrados: totales en cero, sin error.
           int totalPasajeros = 0;
-          int montoTotalGeneral = 0;
-          int montoConductorGeneral = 0;
+          double montoTotalGeneral = 0;
+          double montoConductorGeneral = 0;
           for (final v in viajes) {
             final n = _pasajerosDeViaje(v);
             totalPasajeros += n;
@@ -131,22 +136,22 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E6BFF).withValues(alpha: 0.1),
+                      color: CabifyColors.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: const Color(0xFF1E6BFF)
+                          color: CabifyColors.primary
                               .withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
                         const Icon(Icons.date_range_rounded,
-                            color: Color(0xFF1E6BFF), size: 16),
+                            color: CabifyColors.primary, size: 16),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             '${_fmt(_rangoFechas!.start)} — ${_fmt(_rangoFechas!.end)}',
                             style: const TextStyle(
-                                color: Color(0xFF1E6BFF), fontSize: 12),
+                                color: CabifyColors.primary, fontSize: 12),
                           ),
                         ),
                       ],
@@ -158,36 +163,39 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
                 // ── Resumen general ───────────────────────────────────
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1E6BFF), Color(0xFF0A4BCC)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: CabifyColors.primary,
                     borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: CabifyColors.primary.withValues(alpha: 0.3),
+                        blurRadius: 15,
+                        offset: const Offset(0, 8),
+                      )
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Total recibido',
                           style: TextStyle(
-                              color: Color(0xFFBFD7FF), fontSize: 13)),
+                              color: Colors.white70, fontSize: 13)),
                       const SizedBox(height: 6),
-                      Text('S/ $montoConductorGeneral.00',
+                      Text('S/ ${montoConductorGeneral.toStringAsFixed(2)}',
                           style: const TextStyle(
                               color: Colors.white,
                               fontSize: 32,
                               fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           _miniStat('Viajes', '${viajes.length}'),
-                          const SizedBox(width: 20),
+                          const SizedBox(width: 24),
                           _miniStat('Pasajeros', '$totalPasajeros'),
-                          const SizedBox(width: 20),
+                          const SizedBox(width: 24),
                           _miniStat('Recaudado',
-                              'S/ $montoTotalGeneral'),
+                              'S/ ${montoTotalGeneral.toStringAsFixed(2)}'),
                         ],
                       ),
                     ],
@@ -200,7 +208,7 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
                       ? 'Sin ingresos registrados'
                       : 'Detalle por viaje',
                   style: const TextStyle(
-                      color: Colors.white,
+                      color: CabifyColors.textPrimary,
                       fontSize: 15,
                       fontWeight: FontWeight.w600),
                 ),
@@ -212,20 +220,20 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(32),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF111827),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFF1F2937)),
+                      border: Border.all(color: CabifyColors.border),
                     ),
                     child: const Column(
                       children: [
                         Icon(Icons.payments_outlined,
-                            color: Color(0xFF6B7280), size: 40),
+                            color: CabifyColors.textSecondary, size: 40),
                         SizedBox(height: 10),
                         Text(
-                          'Aún no tienes ingresos registrados en este periodo.',
+                          'Aún no tienes ingresos registrados.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                              color: Color(0xFF6B7280), fontSize: 13),
+                              color: CabifyColors.textSecondary, fontSize: 13),
                         ),
                       ],
                     ),
@@ -252,7 +260,7 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
                 fontSize: 16,
                 fontWeight: FontWeight.w700)),
         Text(label,
-            style: const TextStyle(color: Color(0xFFBFD7FF), fontSize: 11)),
+            style: const TextStyle(color: Colors.white70, fontSize: 11)),
       ],
     );
   }
@@ -267,12 +275,19 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
     cerradoEn is Timestamp ? _fmt(cerradoEn.toDate()) : '-';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF1F2937)),
+        border: Border.all(color: CabifyColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          )
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,47 +298,47 @@ class _DriverIngresosViewState extends State<DriverIngresosView> {
               Expanded(
                 child: Text(rutaLabel,
                     style: const TextStyle(
-                        color: Colors.white,
+                        color: CabifyColors.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w700)),
               ),
               Text(fechaTexto,
                   style: const TextStyle(
-                      color: Color(0xFF6B7280), fontSize: 11)),
+                      color: CabifyColors.textSecondary, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 10),
           Row(
             children: [
-              Icon(Icons.people_outline,
-                  color: const Color(0xFF6B7280), size: 14),
+              const Icon(Icons.people_outline,
+                  color: CabifyColors.textSecondary, size: 14),
               const SizedBox(width: 6),
               Text('$n pasajero(s)',
                   style: const TextStyle(
-                      color: Color(0xFF9CA3AF), fontSize: 12)),
+                      color: CabifyColors.textSecondary, fontSize: 12)),
               const Spacer(),
-              Text('Total: S/ $montoTotal',
+              Text('Total: S/ ${montoTotal.toStringAsFixed(2)}',
                   style: const TextStyle(
-                      color: Color(0xFF6B7280), fontSize: 12)),
+                      color: CabifyColors.textSecondary, fontSize: 12)),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Container(
             padding:
             const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withValues(alpha: 0.12),
+              color: CabifyColors.success.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.payments_rounded,
-                    color: Color(0xFF10B981), size: 14),
+                    color: CabifyColors.success, size: 14),
                 const SizedBox(width: 6),
-                Text('Tu ingreso: S/ $montoConductor',
+                Text('Tu ingreso: S/ ${montoConductor.toStringAsFixed(2)}',
                     style: const TextStyle(
-                        color: Color(0xFF10B981),
+                        color: CabifyColors.success,
                         fontSize: 13,
                         fontWeight: FontWeight.w700)),
               ],

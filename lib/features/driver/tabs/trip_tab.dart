@@ -4,8 +4,11 @@ import '../widgets/admin_alert.dart';
 import '../widgets/start_button.dart';
 import '../widgets/seats_grid.dart';
 import '../widgets/legend_item.dart';
+import '../../shared/reportar_incidencia_view.dart';
+import '../../../app_theme.dart';
 
 class TripTab extends StatelessWidget {
+  final String viajeId;
   final Map<String, dynamic> viaje;
   final bool enCamino;
   final bool forzado;
@@ -24,6 +27,7 @@ class TripTab extends StatelessWidget {
 
   const TripTab({
     super.key,
+    required this.viajeId,
     required this.viaje,
     required this.enCamino,
     required this.forzado,
@@ -76,23 +80,45 @@ class TripTab extends StatelessWidget {
           ],
           const Text('Asientos',
               style: TextStyle(
-                  color: Colors.white,
+                  color: CabifyColors.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
           seatsGrid(asientos: asientos, capacidad: capacidad),
-          const SizedBox(height: 8),
-          Row(children: [
-            legendItem(const Color(0xFF6B7280), 'Libre'),
-            const SizedBox(width: 16),
-            legendItem(const Color(0xFFF59E0B), 'Ocupado'),
-            const SizedBox(width: 16),
-            legendItem(const Color(0xFF10B981), 'Abordado'),
-            const SizedBox(width: 16),
-            legendItem(const Color(0xFFFF3B30), 'Bloqueado'),
-          ]),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              legendItem(const Color(0xFFE5E7EB), 'Libre'),
+              legendItem(const Color(0xFFF59E0B), 'Ocupado'),
+              legendItem(const Color(0xFF10B981), 'Abordado'),
+              legendItem(const Color(0xFFFFD60A), 'Bloqueado'),
+            ],
+          ),
           const SizedBox(height: 32),
           if (enCamino) ...[
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ReportarIncidenciaView(
+                        rolUsuario: 'conductor',
+                        viajeId: viajeId,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.report_problem_outlined, size: 16),
+                label: const Text('REPORTAR INCIDENCIA',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                style: TextButton.styleFrom(foregroundColor: CabifyColors.textSecondary),
+              ),
+            ),
+            const SizedBox(height: 16),
             if (!llegoAlDestino)
               Container(
                 width: double.infinity,
@@ -121,10 +147,10 @@ class TripTab extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: (cerrando || !llegoAlDestino) ? null : onTerminar,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF3B30),
-                  disabledBackgroundColor: const Color(0xFF374151),
+                  backgroundColor: CabifyColors.error,
+                  disabledBackgroundColor: const Color(0xFFF3F4F6),
                   foregroundColor: Colors.white,
-                  disabledForegroundColor: const Color(0xFF6B7280),
+                  disabledForegroundColor: CabifyColors.textSecondary,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                   elevation: 0,

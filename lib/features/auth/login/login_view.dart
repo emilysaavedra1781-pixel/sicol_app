@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../services/auth_service.dart';
-import '../../../services/notification_service.dart';
 import '../register/register_view.dart';
 import '../forgot_password/forgot_password_view.dart';
 import '../../passenger/passenger_home_view.dart';
@@ -9,7 +8,7 @@ import '../../driver/driver_pending_view.dart';
 import '../../driver/driver_home_view.dart';
 import '../../admin/admin_home_view.dart';
 import 'login_form.dart';
-import 'login_widgets.dart';
+import '../../../app_theme.dart';
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -20,13 +19,14 @@ class LoginView extends StatefulWidget {
 
 class _LoginViewState extends State<LoginView> {
   final _authService = AuthService();
-  final _notificationService = NotificationService();
 
   String _rolSeleccionado = 'pasajero';
 
   // Pasajero
   final _celularCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  String? _pasajeroCelularError;
+  String? _pasajeroPassError;
 
   // Conductor
   final _codigoCtrl = TextEditingController();
@@ -35,6 +35,8 @@ class _LoginViewState extends State<LoginView> {
   // Admin
   final _celularAdminCtrl = TextEditingController();
   final _passAdminCtrl = TextEditingController();
+  String? _adminCelularError;
+  String? _adminPassError;
 
   bool _loading = false;
   bool _obscurePass = true;
@@ -51,20 +53,17 @@ class _LoginViewState extends State<LoginView> {
 
   void _onSessionExpired() {
     if (!mounted) return;
-    // Muestra aviso y regresa al login
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF111827),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Sesión expirada',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          style: TextStyle(fontWeight: FontWeight.w700),
         ),
         content: const Text(
           'Tu sesión cerró por inactividad. Vuelve a iniciar sesión.',
-          style: TextStyle(color: Color(0xFF6B7280)),
         ),
         actions: [
           TextButton(
@@ -73,17 +72,15 @@ class _LoginViewState extends State<LoginView> {
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const LoginView()),
-                    (route) => false,
+                (route) => false,
               );
             },
-            child: const Text('Aceptar',
-                style: TextStyle(color: Color(0xFF1E6BFF))),
+            child: const Text('Aceptar'),
           ),
         ],
       ),
     );
   }
-  // ────────────────────────────────────────────────────────
 
   @override
   void dispose() {
@@ -103,109 +100,135 @@ class _LoginViewState extends State<LoginView> {
       _errorMessage = null;
     });
 
-    Map<String, dynamic> result;
+    try {
+      Map<String, dynamic> result;
 
-    if (_rolSeleccionado == 'pasajero') {
-      if (_celularCtrl.text.trim().isEmpty || _passCtrl.text.isEmpty) {
+      if (_rolSeleccionado == 'pasajero') {
+        bool hasError = false;
         setState(() {
-          _loading = false;
-          _errorMessage = 'Completa todos los campos.';
+          _pasajeroCelularError = null;
+          _pasajeroPassError = null;
         });
-        return;
-      }
-      result = await _authService.loginWithCelular(
-        celular: _celularCtrl.text.trim(),
-        password: _passCtrl.text,
-      );
-    } else if (_rolSeleccionado == 'conductor') {
-      if (_codigoCtrl.text.trim().isEmpty || _passCondCtrl.text.isEmpty) {
-        setState(() {
-          _loading = false;
-          _errorMessage = 'Completa todos los campos.';
-        });
-        return;
-      }
-      result = await _authService.loginConductor(
-        codigoConductor: _codigoCtrl.text.trim().toUpperCase(),
-        password: _passCondCtrl.text,
-      );
-    } else {
-      if (_celularAdminCtrl.text.trim().isEmpty || _passAdminCtrl.text.isEmpty) {
-        setState(() {
-          _loading = false;
-          _errorMessage = 'Completa todos los campos.';
-        });
-        return;
-      }
-      result = await _authService.loginAdmin(
-        celular: _celularAdminCtrl.text.trim(),
-        password: _passAdminCtrl.text,
-      );
-    }
 
-    if (!mounted) return;
-    setState(() => _loading = false);
+        if (_celularCtrl.text.trim().isEmpty) {
+          setState(() => _pasajeroCelularError = 'El celular es obligatorio');
+          hasError = true;
+        }
+        if (_passCtrl.text.isEmpty) {
+          setState(() => _pasajeroPassError = 'La contraseña es obligatoria');
+          hasError = true;
+        }
 
-    if (result['success'] == true) {
-      // Inicia el timer de sesión al loguearse
-      _resetSessionTimer();
+        if (hasError) {
+          setState(() => _loading = false);
+          return;
+        }
 
-      // RF30/RF42 — Registrar token FCM para notificaciones push
-      await _notificationService.registrarToken();
-
-      final rol = result['rol'];
-      final estado = result['estado'] ?? 'activo';
-
-      Widget destino;
-      if (rol == 'admin') {
-        destino = const AdminHomeView();
-      } else if (rol == 'conductor') {
-        destino = estado == 'activo'
-            ? const DriverHomeView()
-            : const DriverPendingView();
+        result = await _authService.loginWithCelular(
+          celular: _celularCtrl.text.trim(),
+          password: _passCtrl.text,
+        );
+      } else if (_rolSeleccionado == 'conductor') {
+        if (_codigoCtrl.text.trim().isEmpty || _passCondCtrl.text.isEmpty) {
+          setState(() {
+            _loading = false;
+            _errorMessage = 'Completa todos los campos.';
+          });
+          return;
+        }
+        result = await _authService.loginConductor(
+          codigoConductor: _codigoCtrl.text.trim().toUpperCase(),
+          password: _passCondCtrl.text,
+        );
       } else {
-        destino = const PassengerHomeView();
+        bool hasError = false;
+        setState(() {
+          _adminCelularError = null;
+          _adminPassError = null;
+        });
+
+        if (_celularAdminCtrl.text.trim().isEmpty) {
+          setState(() => _adminCelularError = 'El usuario es obligatorio');
+          hasError = true;
+        }
+        if (_passAdminCtrl.text.isEmpty) {
+          setState(() => _adminPassError = 'La contraseña es obligatoria');
+          hasError = true;
+        }
+
+        if (hasError) {
+          setState(() => _loading = false);
+          return;
+        }
+
+        result = await _authService.loginAdmin(
+          celular: _celularAdminCtrl.text.trim(),
+          password: _passAdminCtrl.text,
+        );
       }
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => destino),
-      );
-    } else {
-      setState(() {
-        switch (result['error']) {
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        _resetSessionTimer();
+        final rol = result['rol'];
+        final estado = result['estado'] ?? 'activo';
+
+        Widget destino;
+        if (rol == 'admin') {
+          destino = const AdminHomeView();
+        } else if (rol == 'conductor') {
+          destino = estado == 'activo'
+              ? const DriverHomeView()
+              : const DriverPendingView();
+        } else {
+          destino = const PassengerHomeView();
+        }
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => destino),
+        );
+      } else {
+        setState(() {
+          switch (result['error']) {
           case 'cuenta_bloqueada':
-            _errorMessage =
-            'Tu cuenta está bloqueada. Usa "¿Olvidaste tu contraseña?" para desbloquearla.';
+            _errorMessage = 'Tu cuenta ha sido bloqueada. Usa la opción de recuperación de contraseña para desbloquearla.';
             break;
           case 'cuenta_pendiente':
-            _errorMessage =
-            'Tu cuenta está pendiente de aprobación. Espera la confirmación del administrador.';
-            break;
-          case 'cuenta_rechazada':
-            _errorMessage =
-            'Tu cuenta fue rechazada. Contacta al administrador.';
-            break;
-          case 'usuario_no_encontrado':
-            _errorMessage = 'No existe una cuenta con esos datos.';
-            break;
-          default:
-            final intentos = result['intentosRestantes'];
-            _errorMessage = intentos != null
-                ? 'Credenciales incorrectas. Te quedan $intentos intento(s).'
-                : 'Credenciales incorrectas.';
-        }
-      });
+              _errorMessage = 'Tu cuenta está pendiente de aprobación. No puedes realizar operaciones hasta que el administrador apruebe tu solicitud.';
+              break;
+            case 'cuenta_rechazada':
+              _errorMessage = 'Tu cuenta fue rechazada.';
+              break;
+            case 'usuario_no_encontrado':
+              _errorMessage = 'Esta cuenta no existe o no está registrada.'; // CP03
+              break;
+            case 'credenciales_invalidas':
+              _errorMessage = 'Credenciales incorrectas.'; // CP02
+              break;
+            default:
+              _errorMessage = 'Credenciales incorrectas.';
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'No se pudo conectar. Verifica tu conexión a internet e inténtalo de nuevo.'; // CP05
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Listener(
-      // Reinicia el timer con cualquier toque del usuario
       onPointerDown: (_) => _resetSessionTimer(),
       child: Scaffold(
-        backgroundColor: const Color(0xFF0A0E1A),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
@@ -213,222 +236,197 @@ class _LoginViewState extends State<LoginView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 24),
-
-                // Branding
                 Center(
                   child: Column(
                     children: [
                       Container(
-                        width: 72,
-                        height: 72,
+                        width: 80,
+                        height: 80,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1E6BFF),
-                          borderRadius: BorderRadius.circular(20),
+                          color: Theme.of(context).primaryColor,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Theme.of(context).primaryColor.withValues(alpha: 0.3),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
+                            )
+                          ],
                         ),
                         child: const Icon(Icons.directions_bus_rounded,
-                            color: Colors.white, size: 40),
+                            color: Colors.white, size: 44),
                       ),
-                      const SizedBox(height: 16),
-                      const Text('SICOL',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 4)),
-                      const SizedBox(height: 4),
-                      const Text('Sistema de Colectivos',
-                          style: TextStyle(
-                              color: Color(0xFF6B7280),
-                              fontSize: 13,
-                              letterSpacing: 1)),
+                      const SizedBox(height: 24),
+                      Text('SICOL',
+                          style: Theme.of(context).textTheme.displayLarge),
+                      const SizedBox(height: 8),
+                      Text('Sistema de Colectivos',
+                          style: Theme.of(context).textTheme.bodyMedium),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 48),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      _buildRolTab('pasajero', 'Pasajero'),
+                      _buildRolTab('conductor', 'Conductor'),
+                      _buildRolTab('admin', 'Admin'),
                     ],
                   ),
                 ),
                 const SizedBox(height: 40),
-
-                // Selector de rol
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111827),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF1F2937)),
-                  ),
-                  child: Row(
-                    children: [
-                      rolTab(
-                        rol: 'pasajero',
-                        rolSeleccionado: _rolSeleccionado,
-                        label: 'Pasajero',
-                        icon: Icons.person_outline,
-                        onTap: () => setState(() {
-                          _rolSeleccionado = 'pasajero';
-                          _errorMessage = null;
-                          _obscurePass = true;
-                        }),
-                      ),
-                      rolTab(
-                        rol: 'conductor',
-                        rolSeleccionado: _rolSeleccionado,
-                        label: 'Conductor',
-                        icon: Icons.drive_eta_outlined,
-                        onTap: () => setState(() {
-                          _rolSeleccionado = 'conductor';
-                          _errorMessage = null;
-                          _obscurePass = true;
-                        }),
-                      ),
-                      rolTab(
-                        rol: 'admin',
-                        rolSeleccionado: _rolSeleccionado,
-                        label: 'Admin',
-                        icon: Icons.admin_panel_settings_outlined,
-                        onTap: () => setState(() {
-                          _rolSeleccionado = 'admin';
-                          _errorMessage = null;
-                          _obscurePass = true;
-                        }),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 32),
-
-                const Text('Iniciar sesión',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700)),
-                const SizedBox(height: 9),
+                Text('Bienvenido',
+                    style: Theme.of(context).textTheme.displayLarge),
+                const SizedBox(height: 8),
                 Text(
                   _rolSeleccionado == 'conductor'
                       ? 'Ingresa tu código de conductor y contraseña'
                       : 'Ingresa tu celular y contraseña',
-                  style: const TextStyle(
-                      color: Color(0xFF6B7280), fontSize: 14),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 32),
-
-                // Error banner
                 if (_errorMessage != null)
                   Container(
                     margin: const EdgeInsets.only(bottom: 20),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF3B30).withOpacity(0.12),
+                      color: Theme.of(context).colorScheme.error.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: const Color(0xFFFF3B30).withOpacity(0.3)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline,
-                            color: Color(0xFFFF3B30), size: 18),
+                        Icon(Icons.error_outline,
+                            color: Theme.of(context).colorScheme.error, size: 18),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(_errorMessage!,
-                              style: const TextStyle(
-                                  color: Color(0xFFFF3B30), fontSize: 13)),
+                              style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontSize: 13)),
                         ),
                       ],
                     ),
                   ),
-
-                // Formulario según rol
                 if (_rolSeleccionado == 'pasajero')
                   PasajeroForm(
                     celularCtrl: _celularCtrl,
                     passCtrl: _passCtrl,
                     obscurePass: _obscurePass,
-                    onTogglePass: () =>
-                        setState(() => _obscurePass = !_obscurePass),
+                    celularError: _pasajeroCelularError,
+                    passError: _pasajeroPassError,
+                    onTogglePass: () => setState(() => _obscurePass = !_obscurePass),
                   )
                 else if (_rolSeleccionado == 'conductor')
                   ConductorForm(
                     codigoCtrl: _codigoCtrl,
                     passCtrl: _passCondCtrl,
                     obscurePass: _obscurePass,
-                    onTogglePass: () =>
-                        setState(() => _obscurePass = !_obscurePass),
+                    onTogglePass: () => setState(() => _obscurePass = !_obscurePass),
                   )
                 else
                   AdminForm(
                     celularCtrl: _celularAdminCtrl,
                     passCtrl: _passAdminCtrl,
                     obscurePass: _obscurePass,
-                    onTogglePass: () =>
-                        setState(() => _obscurePass = !_obscurePass),
+                    celularError: _adminCelularError,
+                    passError: _adminPassError,
+                    onTogglePass: () => setState(() => _obscurePass = !_obscurePass),
                   ),
-
                 const SizedBox(height: 12),
-
-                // Olvidé contraseña
                 Align(
                   alignment: Alignment.centerRight,
                   child: GestureDetector(
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(
-                          builder: (_) => const ForgotPasswordView()),
+                      MaterialPageRoute(builder: (_) => const ForgotPasswordView()),
                     ),
-                    child: const Text('¿Olvidaste tu contraseña?',
+                    child: Text('¿Olvidaste tu contraseña?',
                         style: TextStyle(
-                            color: Color(0xFF1E6BFF),
+                            color: Theme.of(context).primaryColor,
                             fontSize: 13,
                             fontWeight: FontWeight.w500)),
                   ),
                 ),
                 const SizedBox(height: 32),
-
-                // Botón login
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E6BFF),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      elevation: 0,
-                    ),
-                    child: _loading
-                        ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2.5))
-                        : const Text('Iniciar sesión',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600)),
-                  ),
+                ElevatedButton(
+                  onPressed: _loading ? null : _login,
+                  child: _loading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5))
+                      : const Text('INICIAR SESIÓN'),
                 ),
                 const SizedBox(height: 32),
-
-                // Registro
                 if (_rolSeleccionado != 'admin')
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Text('¿No tienes cuenta? ',
-                          style: TextStyle(
-                              color: Color(0xFF6B7280), fontSize: 14)),
+                          style: TextStyle(color: Color(0xFF6B7280), fontSize: 14)),
                       GestureDetector(
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => RegisterView(
-                                  rolInicial: _rolSeleccionado)),
+                              builder: (_) => RegisterView(rolInicial: _rolSeleccionado)),
                         ),
-                        child: const Text('Regístrate',
+                        child: Text('Regístrate',
                             style: TextStyle(
-                                color: Color(0xFF1E6BFF),
+                                color: Theme.of(context).primaryColor,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRolTab(String rol, String label) {
+    final seleccionado = _rolSeleccionado == rol;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() {
+          _rolSeleccionado = rol;
+          _errorMessage = null;
+          _adminCelularError = null;
+          _adminPassError = null;
+          _obscurePass = true;
+        }),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: seleccionado ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: seleccionado
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    )
+                  ]
+                : null,
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: seleccionado ? CabifyColors.primary : CabifyColors.textSecondary,
+              fontWeight: seleccionado ? FontWeight.w600 : FontWeight.w500,
+              fontSize: 14,
             ),
           ),
         ),

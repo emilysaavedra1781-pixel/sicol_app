@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../../app_theme.dart';
 
 class MapaSeguimientoWidget extends StatefulWidget {
   final String viajeId;
@@ -41,7 +42,7 @@ class _MapaSeguimientoWidgetState extends State<MapaSeguimientoWidget> {
       builder: (context, snapshot) {
         if (!snapshot.hasData || !snapshot.data!.exists) {
           return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
+              child: CircularProgressIndicator(color: CabifyColors.primary));
         }
 
         final viaje = snapshot.data!.data() as Map<String, dynamic>;
@@ -79,7 +80,7 @@ class _MapaSeguimientoWidgetState extends State<MapaSeguimientoWidget> {
                   Expanded(
                     child: Text(rutaLabel,
                         style: const TextStyle(
-                            color: Colors.white,
+                            color: CabifyColors.textPrimary,
                             fontSize: 15,
                             fontWeight: FontWeight.w700)),
                   ),
@@ -112,7 +113,8 @@ class _MapaSeguimientoWidgetState extends State<MapaSeguimientoWidget> {
                 child: GoogleMap(
                   initialCameraPosition: CameraPosition(target: posActual, zoom: 13),
                   onMapCreated: (c) => _mapController = c,
-                  myLocationButtonEnabled: false,
+                  myLocationEnabled: true,
+                  myLocationButtonEnabled: true,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
                   markers: {

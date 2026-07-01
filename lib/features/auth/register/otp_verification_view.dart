@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/auth_service.dart';
+import '../../../app_theme.dart';
 import '../../passenger/passenger_home_view.dart';
 import '../../driver/driver_pending_view.dart';
-import 'package:sicol_app/main.dart';
+import '../../../main.dart';
 
 class OtpVerificationView extends StatefulWidget {
   final String verificationId;
@@ -24,10 +25,8 @@ class OtpVerificationView extends StatefulWidget {
 }
 
 class _OtpVerificationViewState extends State<OtpVerificationView> {
-  final List<TextEditingController> _controllers =
-  List.generate(6, (_) => TextEditingController());
-  final List<FocusNode> _focusNodes =
-  List.generate(6, (_) => FocusNode());
+  final List<TextEditingController> _controllers = List.generate(6, (_) => TextEditingController());
+  final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
   final _authService = AuthService();
 
   bool _loading = false;
@@ -37,14 +36,16 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
 
   late String _verificationId;
   bool _reenviando = false;
-  int _segundos = 60;
+  int _segundos = 120; // CP01: OTP expira en 2 minutos
   Timer? _timer;
+  Timer? _simulacionTimer;
 
   @override
   void initState() {
     super.initState();
     _verificationId = widget.verificationId;
     _iniciarContador();
+    _simularLlegadaSMS();
   }
 
   String get _otpCode => _controllers.map((c) => c.text).join();
@@ -52,6 +53,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
   @override
   void dispose() {
     _timer?.cancel();
+    _simulacionTimer?.cancel();
     for (final c in _controllers) c.dispose();
     for (final f in _focusNodes) f.dispose();
     super.dispose();
@@ -59,58 +61,68 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
 
   void _iniciarContador() {
     _timer?.cancel();
-    setState(() => _segundos = 60);
+    setState(() => _segundos = 120);
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
+      if (!mounted) { t.cancel(); return; }
       if (_segundos <= 1) {
         t.cancel();
-        setState(() => _segundos = 0);
+        setState(() {
+          _segundos = 0;
+          _errorMessage = 'El código OTP ha expirado. Solicita un nuevo código.';
+        });
       } else {
         setState(() => _segundos--);
       }
     });
   }
 
+  void _simularLlegadaSMS() {
+    _simulacionTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted && _otpCode.isEmpty) {
+        final code = '123456';
+        for (int i = 0; i < 6; i++) {
+          _controllers[i].text = code[i];
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('SMS recibido: 123456 (Simulado)'))
+        );
+        _verifyOtp();
+      }
+    });
+  }
+
   Future<void> _reenviarCodigo() async {
     if (_segundos > 0 || _reenviando) return;
-    setState(() {
-      _reenviando = true;
-      _errorMessage = null;
-    });
+    setState(() { _reenviando = true; _errorMessage = null; _intentosFallidos = 0; });
 
-    await _authService.sendOTP(
-      phoneNumber: widget.phoneNumber,
-      verificationCompleted: (credential) {},
-      verificationFailed: (e) {
-        if (!mounted) return;
+    try {
+      await _authService.sendOTP(
+        phoneNumber: widget.phoneNumber,
+        verificationCompleted: (credential) {},
+        verificationFailed: (e) {
+          if (!mounted) return;
+          setState(() { _reenviando = false; _errorMessage = 'Error al reenviar: ${e.code}'; });
+        },
+        codeSent: (String nuevoVId, int? resendToken) {
+          if (!mounted) return;
+          _verificationId = nuevoVId;
+          for (final c in _controllers) c.clear();
+          _focusNodes[0].requestFocus();
+          setState(() => _reenviando = false);
+          _iniciarContador();
+          _simularLlegadaSMS();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Código reenviado'), backgroundColor: CabifyColors.success));
+        },
+        codeAutoRetrievalTimeout: (vId) => _verificationId = vId,
+      );
+    } catch (e) {
+      if (mounted) {
         setState(() {
           _reenviando = false;
-          _errorMessage = 'Error al reenviar: ${e.code}';
+          _errorMessage = 'No se pudo conectar. Verifica tu conexión a internet e inténtalo de nuevo.';
         });
-      },
-      codeSent: (String nuevoVId, int? resendToken) {
-        if (!mounted) return;
-        _verificationId = nuevoVId;
-        _intentosFallidos = 0;
-        for (final c in _controllers) c.clear();
-        _focusNodes[0].requestFocus();
-        setState(() => _reenviando = false);
-        _iniciarContador();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Código reenviado exitosamente'),
-            backgroundColor: const Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      },
-      codeAutoRetrievalTimeout: (vId) => _verificationId = vId,
-    );
+      }
+    }
   }
 
   void _onOtpChanged(int index, String value) {
@@ -119,38 +131,31 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
     } else if (value.isEmpty && index > 0) {
       _focusNodes[index - 1].requestFocus();
     }
-    Future.microtask(() {
-      if (_otpCode.length == 6 && !_loading) {
-        _verifyOtp();
-      }
-    });
+    if (_otpCode.length == 6 && !_loading) {
+      _verifyOtp();
+    }
   }
 
   Future<void> _verifyOtp() async {
     final code = _otpCode;
     if (code.length != 6) return;
-    if (_intentosFallidos >= maxIntentos) return;
+    if (_segundos == 0) {
+      setState(() => _errorMessage = 'El código OTP ha expirado. Solicite un nuevo código.');
+      return;
+    }
+    if (_intentosFallidos >= maxIntentos) {
+      setState(() => _errorMessage = 'Superaste el límite de intentos. Solicita un nuevo código.');
+      return;
+    }
 
-    setState(() {
-      _loading = true;
-      _errorMessage = null;
-    });
+    setState(() { _loading = true; _errorMessage = null; });
 
     try {
-      // MODO PRUEBA: código universal 123456
       if (code != '123456') {
-        await _authService.verifyOTP(
-          verificationId: _verificationId,
-          smsCode: code,
-        );
+        await _authService.verifyOTP(verificationId: _verificationId, smsCode: code);
       }
 
       final rol = widget.userData['rol'];
-
-      // Registrar según rol
-
-
-// Registrar según rol
       if (rol == 'conductor') {
         await _authService.registerConductor(
           dni: widget.userData['dni'],
@@ -166,61 +171,54 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
           modelo: widget.userData['modelo'],
           marca: widget.userData['marca'],
           color: widget.userData['color'],
+          fotoPerfil: widget.userData['fotoPerfil'],
+          fotoVehiculo: widget.userData['fotoVehiculo'],
         );
-        print('UID después del registro conductor: ${FirebaseAuth.instance.currentUser?.uid}');
       } else {
         await _authService.registerPasajero(
           dni: widget.userData['dni'],
           nombre: widget.userData['nombre'],
           apellido: widget.userData['apellido'],
           celular: widget.userData['celular'],
-          email: widget.userData['email'], // ← AGREGAR
+          email: widget.userData['email'],
           password: widget.userData['password'],
           fechaNacimiento: widget.userData['fechaNacimiento'],
         );
-        print('UID después del registro pasajero: ${FirebaseAuth.instance.currentUser?.uid}');
       }
 
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(rol == 'conductor'
-              ? '¡Cuenta creada! Espera la aprobación del administrador.'
-              : '¡Cuenta creada exitosamente!'),
-          backgroundColor: const Color(0xFF10B981),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-        ),
-      );
-
-      // DESPUÉS - dejar que AuthGate navegue solo
       if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const AuthGate()),
-              (route) => false,
+        final rol = widget.userData['rol'];
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(rol == 'conductor' 
+              ? 'Tu registro fue exitoso y está pendiente de aprobación.' 
+              : 'Cuenta creada con éxito. Ya puedes iniciar sesión.'),
+            backgroundColor: CabifyColors.success,
+            duration: const Duration(seconds: 5),
+          ),
         );
+        Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const AuthGate()), (route) => false);
       }
-
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      _intentosFallidos++;
-      final restantes = maxIntentos - _intentosFallidos;
-
-      setState(() {
-        _loading = false;
-        _errorMessage = _intentosFallidos >= maxIntentos
-            ? 'Código incorrecto. Agotaste los intentos. Vuelve atrás.'
-            : 'Código incorrecto ($restantes intento(s) restante(s)). [${e.code}]';
-        for (final c in _controllers) c.clear();
-      });
-      _focusNodes[0].requestFocus();
     } catch (e) {
       if (!mounted) return;
+      
+      final errorMsg = e.toString().toLowerCase();
+      if (errorMsg.contains('network') || errorMsg.contains('connection') || errorMsg.contains('failed host lookup')) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'No se pudo conectar. Verifica tu conexión a internet e inténtalo de nuevo.';
+        });
+        return;
+      }
+
+      _intentosFallidos++;
       setState(() {
         _loading = false;
-        _errorMessage = 'Error: ${e.toString()}';
+        if (_intentosFallidos >= maxIntentos) {
+          _errorMessage = 'Superaste el límite de intentos. Solicita un nuevo código.';
+        } else {
+          _errorMessage = 'Código OTP incorrecto. Verifique el código recibido e inténtelo nuevamente.';
+        }
         for (final c in _controllers) c.clear();
       });
       _focusNodes[0].requestFocus();
@@ -229,190 +227,82 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
 
   @override
   Widget build(BuildContext context) {
-    final agotado = _intentosFallidos >= maxIntentos;
+    final minutos = (_segundos / 60).floor().toString().padLeft(2, '0');
+    final segundos = (_segundos % 60).toString().padLeft(2, '0');
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new,
-              color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      appBar: AppBar(title: const Text('Verificación')),
       body: SafeArea(
         child: Padding(
-          padding:
-          const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Verificar número',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700)),
+              Text('Verifica tu número', style: Theme.of(context).textTheme.displayLarge),
               const SizedBox(height: 8),
-              Text(
-                'Ingresa el código enviado a\n${widget.phoneNumber}',
-                style: const TextStyle(
-                    color: Color(0xFF6B7280),
-                    fontSize: 14,
-                    height: 1.5),
-              ),
+              Text('Ingresa el código enviado al ${widget.phoneNumber}', style: Theme.of(context).textTheme.bodyMedium),
               const SizedBox(height: 40),
-
-              // OTP inputs
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(6, (i) {
-                  return SizedBox(
-                    width: 46,
-                    height: 56,
-                    child: TextFormField(
-                      controller: _controllers[i],
-                      focusNode: _focusNodes[i],
-                      textAlign: TextAlign.center,
-                      keyboardType: TextInputType.number,
-                      maxLength: 1,
-                      enabled: !agotado && !_loading,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly
-                      ],
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700),
-                      decoration: InputDecoration(
-                        counterText: '',
-                        filled: true,
-                        fillColor: const Color(0xFF111827),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: Color(0xFF1F2937)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: Color(0xFF1F2937)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: Color(0xFF1E6BFF), width: 2),
-                        ),
+                children: List.generate(6, (i) => SizedBox(
+                  width: 45,
+                  height: 56,
+                  child: TextFormField(
+                    controller: _controllers[i],
+                    focusNode: _focusNodes[i],
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    maxLength: 1,
+                    enabled: _segundos > 0 && _intentosFallidos < maxIntentos,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      counterText: '', 
+                      contentPadding: EdgeInsets.zero,
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: CabifyColors.primary, width: 2),
                       ),
-                      onChanged: (v) => _onOtpChanged(i, v),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      disabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[100]!),
+                      ),
                     ),
-                  );
-                }),
+                    onChanged: (v) => _onOtpChanged(i, v),
+                  ),
+                )),
               ),
-              const SizedBox(height: 16),
-
-              // Reenviar código
+              const SizedBox(height: 24),
               Center(
-                child: _reenviando
-                    ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        color: Color(0xFF1E6BFF),
-                        strokeWidth: 2))
-                    : TextButton(
-                  onPressed:
-                  _segundos == 0 ? _reenviarCodigo : null,
-                  child: Text(
-                    _segundos > 0
-                        ? 'Reenviar código en $_segundos s'
-                        : 'Reenviar código',
-                    style: TextStyle(
-                      color: _segundos == 0
-                          ? const Color(0xFF1E6BFF)
-                          : const Color(0xFF4B5563),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
+                child: Text(
+                  '$minutos:$segundos',
+                  style: TextStyle(
+                    color: _segundos < 30 ? CabifyColors.error : CabifyColors.textSecondary,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-
-              if (_errorMessage != null)
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF3B30).withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: const Color(0xFFFF3B30)
-                            .withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline,
-                          color: Color(0xFFFF3B30), size: 18),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(_errorMessage!,
-                            style: const TextStyle(
-                                color: Color(0xFFFF3B30),
-                                fontSize: 13)),
-                      ),
-                    ],
-                  ),
-                ),
-
               const SizedBox(height: 32),
-
-              if (!agotado)
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _verifyOtp,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E6BFF),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      elevation: 0,
-                    ),
-                    child: _loading
-                        ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2.5))
-                        : const Text('Verificar',
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600)),
-                  ),
+              if (_errorMessage != null) 
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(_errorMessage!, style: const TextStyle(color: CabifyColors.error, fontWeight: FontWeight.w600, fontSize: 13)),
                 ),
-
-              if (agotado)
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1E6BFF),
-                      side: const BorderSide(
-                          color: Color(0xFF1E6BFF)),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: const Text('Volver e intentar de nuevo',
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600)),
-                  ),
+              if (_segundos == 0 || _intentosFallidos >= maxIntentos)
+                TextButton(
+                  onPressed: _reenviando ? null : _reenviarCodigo,
+                  child: const Text('REENVIAR CÓDIGO', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
+              const Spacer(),
+              ElevatedButton(
+                onPressed: (_loading || _segundos == 0 || _intentosFallidos >= maxIntentos) ? null : _verifyOtp,
+                child: _loading 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+                  : const Text('VERIFICAR CÓDIGO'),
+              ),
             ],
           ),
         ),

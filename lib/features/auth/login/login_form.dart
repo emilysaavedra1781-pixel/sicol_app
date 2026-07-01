@@ -6,6 +6,8 @@ class PasajeroForm extends StatelessWidget {
   final TextEditingController celularCtrl;
   final TextEditingController passCtrl;
   final bool obscurePass;
+  final String? celularError;
+  final String? passError;
   final VoidCallback onTogglePass;
 
   const PasajeroForm({
@@ -13,6 +15,8 @@ class PasajeroForm extends StatelessWidget {
     required this.celularCtrl,
     required this.passCtrl,
     required this.obscurePass,
+    this.celularError,
+    this.passError,
     required this.onTogglePass,
   });
 
@@ -21,31 +25,33 @@ class PasajeroForm extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        buildLabel('Número de celular'),
+        buildLabel('NÚMERO DE CELULAR'),
         const SizedBox(height: 8),
         TextFormField(
           controller: celularCtrl,
           keyboardType: TextInputType.phone,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          style: const TextStyle(color: Colors.white, fontSize: 15),
+          style: const TextStyle(color: Color(0xFF111827), fontSize: 15),
           decoration: inputDecoration(
             hint: '9XXXXXXXX',
             icon: Icons.phone_outlined,
+            errorText: celularError,
             prefix: const Padding(
               padding: EdgeInsets.only(left: 12, right: 4),
               child: Text(
                 '+51 ',
-                style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+                style: TextStyle(color: Color(0xFF111827), fontSize: 14, fontWeight: FontWeight.bold),
               ),
             ),
           ),
         ),
         const SizedBox(height: 20),
-        buildLabel('Contraseña'),
+        buildLabel('CONTRASEÑA'),
         const SizedBox(height: 8),
         buildPassField(
           ctrl: passCtrl,
           obscure: obscurePass,
+          errorText: passError,
           onToggle: onTogglePass,
         ),
       ],
@@ -72,44 +78,17 @@ class ConductorForm extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        buildLabel('Código de conductor'),
-        const SizedBox(height: 9),
+        buildLabel('CÓDIGO DE CONDUCTOR'),
+        const SizedBox(height: 8),
         TextFormField(
           controller: codigoCtrl,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            letterSpacing: 2,
-          ),
+          style: const TextStyle(color: Color(0xFF111827), fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 2),
           textCapitalization: TextCapitalization.characters,
-          maxLength: 9,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9-]')),
-          ],
-          onChanged: (value) {
-            final upper = value.toUpperCase();
-            if (value != upper) {
-              codigoCtrl.value = TextEditingValue(
-                text: upper,
-                selection: TextSelection.collapsed(offset: upper.length),
-              );
-            }
-          },
-          validator: (value) {
-            if (value == null || value.trim().isEmpty) {
-              return 'Ingresa tu código de conductor';
-            }
-            if (value != value.trim()) return 'No uses espacios al inicio o final';
-            if (!RegExp(r'^COND-\d{3}$').hasMatch(value)) {
-              return 'Formato válido: COND-0001';
-            }
-            return null;
-          },
           decoration: inputDecoration(hint: 'COND-0001', icon: Icons.badge_outlined),
         ),
         const SizedBox(height: 20),
-        buildLabel('Contraseña'),
-        const SizedBox(height: 9),
+        buildLabel('CONTRASEÑA'),
+        const SizedBox(height: 8),
         buildPassField(
           ctrl: passCtrl,
           obscure: obscurePass,
@@ -124,6 +103,8 @@ class AdminForm extends StatelessWidget {
   final TextEditingController celularCtrl;
   final TextEditingController passCtrl;
   final bool obscurePass;
+  final String? celularError;
+  final String? passError;
   final VoidCallback onTogglePass;
 
   const AdminForm({
@@ -131,6 +112,8 @@ class AdminForm extends StatelessWidget {
     required this.celularCtrl,
     required this.passCtrl,
     required this.obscurePass,
+    this.celularError,
+    this.passError,
     required this.onTogglePass,
   });
 
@@ -139,31 +122,25 @@ class AdminForm extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        buildLabel('Número de celular'),
+        buildLabel('NÚMERO DE CELULAR'),
         const SizedBox(height: 8),
         TextFormField(
           controller: celularCtrl,
           keyboardType: TextInputType.phone,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          style: const TextStyle(color: Colors.white, fontSize: 15),
+          style: const TextStyle(color: Color(0xFF111827), fontSize: 15),
           decoration: inputDecoration(
             hint: '9XXXXXXXX',
             icon: Icons.phone_outlined,
-            prefix: const Padding(
-              padding: EdgeInsets.only(left: 12, right: 4),
-              child: Text(
-                '+51 ',
-                style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
-              ),
-            ),
+            errorText: celularError,
           ),
         ),
         const SizedBox(height: 20),
-        buildLabel('Contraseña'),
+        buildLabel('CONTRASEÑA'),
         const SizedBox(height: 8),
         buildPassField(
           ctrl: passCtrl,
           obscure: obscurePass,
+          errorText: passError,
           onToggle: onTogglePass,
         ),
       ],

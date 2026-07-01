@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/trip_service.dart';
 import 'driver_drawer.dart';
+import 'driver_viaje_detalle_view.dart';
+import '../../app_theme.dart';
 
 /// Historial de viajes del conductor (sin información de ingresos).
 class DriverHistorialViajesView extends StatefulWidget {
@@ -19,14 +21,18 @@ class _DriverHistorialViajesViewState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: Colors.white,
       drawer: const DriverDrawer(currentRoute: 'viajes'),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111827),
+        backgroundColor: Colors.white,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: CabifyColors.primary),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: const Text('Mis viajes',
             style: TextStyle(
-                color: Colors.white,
+                color: CabifyColors.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600)),
       ),
@@ -35,13 +41,24 @@ class _DriverHistorialViajesViewState
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
-                child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
+                child: CircularProgressIndicator(color: CabifyColors.primary));
           }
 
           if (snapshot.hasError) {
             return Center(
-              child: Text('Error al cargar viajes: ${snapshot.error}',
-                  style: const TextStyle(color: Colors.white)),
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off_rounded, color: CabifyColors.error, size: 40),
+                    const SizedBox(height: 16),
+                    Text('Error al cargar viajes: ${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: CabifyColors.textSecondary, fontSize: 13)),
+                  ],
+                ),
+              ),
             );
           }
 
@@ -55,13 +72,13 @@ class _DriverHistorialViajesViewState
                   mainAxisSize: MainAxisSize.min,
                   children: const [
                     Icon(Icons.route_outlined,
-                        color: Color(0xFF6B7280), size: 40),
+                        color: CabifyColors.textSecondary, size: 40),
                     SizedBox(height: 10),
                     Text(
-                      'Aún no tienes viajes registrados.',
+                      'Aún no tienes viajes registrados. Tus viajes finalizados aparecerán aquí.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                          color: Color(0xFF6B7280), fontSize: 13),
+                          color: CabifyColors.textSecondary, fontSize: 13),
                     ),
                   ],
                 ),
@@ -87,59 +104,86 @@ class _DriverHistorialViajesViewState
     final fechaTexto =
     cerradoEn is Timestamp ? _fmt(cerradoEn.toDate()) : '-';
     final estado = viaje['estado'] ?? 'finalizado';
+    
+    // CP05: Cálculo del monto (S/10 por pasajero)
+    final montoConductor = asientos * 10.0;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF1F2937)),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => DriverViajeDetalleView(viaje: viaje)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(rutaLabel,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700)),
-              ),
-              Text(fechaTexto,
-                  style: const TextStyle(
-                      color: Color(0xFF6B7280), fontSize: 11)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Icon(Icons.people_outline,
-                  color: Color(0xFF6B7280), size: 14),
-              const SizedBox(width: 6),
-              Text('$asientos/$capacidad pasajeros',
-                  style: const TextStyle(
-                      color: Color(0xFF9CA3AF), fontSize: 12)),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E6BFF).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: CabifyColors.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            )
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(rutaLabel,
+                      style: const TextStyle(
+                          color: CabifyColors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700)),
                 ),
-                child: Text(estado,
+                Text(fechaTexto,
                     style: const TextStyle(
-                        color: Color(0xFF1E6BFF),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ),
-        ],
+                        color: CabifyColors.textSecondary, fontSize: 11)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.people_outline,
+                    color: CabifyColors.textSecondary, size: 14),
+                const SizedBox(width: 6),
+                Text('$asientos/$capacidad pasajeros',
+                    style: const TextStyle(
+                        color: CabifyColors.textSecondary, fontSize: 12)),
+                const Spacer(),
+                Text('S/ ${montoConductor.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                        color: CabifyColors.success,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: CabifyColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(estado.toUpperCase(),
+                      style: const TextStyle(
+                          color: CabifyColors.primary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5)),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

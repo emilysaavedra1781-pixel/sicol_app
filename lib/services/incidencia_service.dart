@@ -16,6 +16,7 @@ class IncidenciaService {
     required String tipo,
     required String descripcion,
     String? viajeId,
+    int? minutosRetraso,
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
@@ -35,12 +36,14 @@ class IncidenciaService {
       'tipo': tipo,
       'descripcion': descripcion.trim(),
       'viajeId': viajeId,
+      'minutosRetraso': minutosRetraso,
       'estado': 'pendiente',
       'creadoEn': FieldValue.serverTimestamp(),
     });
   }
 
   /// Historial de incidencias reportadas por el usuario actual.
+  /// NOTA: Requiere un índice compuesto en Firestore: usuarioId (asc) + creadoEn (desc)
   Future<List<Map<String, dynamic>>> getMisIncidencias() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return [];

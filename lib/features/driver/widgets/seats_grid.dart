@@ -5,61 +5,60 @@ Widget seatsGrid({
   required int capacidad,
 }) {
   return Container(
-    padding: const EdgeInsets.all(16),
+    padding: const EdgeInsets.all(20),
     decoration: BoxDecoration(
-      color: const Color(0xFF111827),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFF1F2937)),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: const Color(0xFFE5E7EB)),
     ),
     child: GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 1,
+        crossAxisCount: 2,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: 1.2,
       ),
       itemCount: capacidad,
       itemBuilder: (context, index) {
         final key = 'asiento_${index + 1}';
-        final asiento =
-            (asientos[key] as Map?)?.cast<String, dynamic>() ?? {};
+        final asiento = (asientos[key] as Map?)?.cast<String, dynamic>() ?? {};
         final estado = asiento['estado'] ?? 'libre';
 
         Color color;
         IconData icon;
 
         if (estado == 'ocupado') {
-          color = const Color(0xFFF59E0B);
+          color = const Color(0xFFF59E0B); // Naranja (pago confirmado)
           icon = Icons.person;
         } else if (estado == 'abordado') {
-          color = const Color(0xFF10B981);
+          color = const Color(0xFF10B981); // Verde (ya subió)
           icon = Icons.check_circle;
         } else if (estado == 'bloqueado') {
-          color = const Color(0xFFFF3B30);
-          icon = Icons.lock_outline;
+          color = const Color(0xFFFFD60A); // Amarillo (proceso de pago)
+          icon = Icons.lock_clock_rounded;
         } else {
-          color = const Color(0xFF6B7280);
-          icon = Icons.person_outline;
+          color = const Color(0xFFE5E7EB); // Gris (libre)
+          icon = Icons.event_seat_rounded;
         }
 
         return Container(
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: color.withValues(alpha: 0.4)),
+            color: estado == 'libre' ? const Color(0xFFF9FAFB) : color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: estado == 'libre' ? const Color(0xFFE5E7EB) : color),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(height: 2),
+              Icon(icon, color: estado == 'libre' ? const Color(0xFFD1D5DB) : color, size: 24),
+              const SizedBox(height: 4),
               Text('${index + 1}',
                   style: TextStyle(
-                      color: color,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700)),
+                      color: estado == 'libre' ? const Color(0xFF9CA3AF) : color,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800)),
             ],
           ),
         );

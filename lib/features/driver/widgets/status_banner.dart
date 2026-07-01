@@ -6,60 +6,51 @@ Widget statusBanner({
   required int asientosOcupados,
   required int capacidad,
 }) {
+  final primaryColor = enCamino ? const Color(0xFF7C3AED) : const Color(0xFF10B981);
+
   return Container(
     width: double.infinity,
-    padding: const EdgeInsets.all(20),
+    padding: const EdgeInsets.all(24),
     decoration: BoxDecoration(
-      gradient: enCamino
-          ? const LinearGradient(
-          colors: [Color(0xFF1E6BFF), Color(0xFF0A4BCC)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight)
-          : const LinearGradient(
-          colors: [Color(0xFF10B981), Color(0xFF059669)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight),
+      color: primaryColor,
       borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: primaryColor.withValues(alpha: 0.3),
+          blurRadius: 12,
+          offset: const Offset(0, 6),
+        )
+      ],
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [
-          Icon(
-              enCamino
-                  ? Icons.directions_car_rounded
-                  : Icons.hourglass_top_rounded,
-              color: Colors.white,
-              size: 26),
-          const SizedBox(width: 10),
-          Container(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20)),
-            child: Text(
-                enCamino ? 'EN CAMINO' : 'ESPERANDO PASAJEROS',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1)),
-          ),
-        ]),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              enCamino ? 'VIAJE EN CURSO' : 'ESPERANDO RECOJO',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5),
+            ),
+            const Icon(Icons.info_outline, color: Colors.white70, size: 16),
+          ],
+        ),
         const SizedBox(height: 12),
-        Text('$asientosOcupados de $capacidad asientos ocupados',
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.9), fontSize: 14)),
-        const SizedBox(height: 8),
+        Text('$asientosOcupados de $capacidad pasajeros',
+            style: const TextStyle(
+                color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 16),
         ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(10),
             child: LinearProgressIndicator(
               value: capacidad > 0 ? asientosOcupados / capacidad : 0,
-              backgroundColor: Colors.white.withValues(alpha: 0.2),
-              valueColor:
-              const AlwaysStoppedAnimation<Color>(Colors.white),
-              minHeight: 6,
+              backgroundColor: Colors.white24,
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              minHeight: 8,
             )),
       ],
     ),

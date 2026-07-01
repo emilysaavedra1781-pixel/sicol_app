@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../../../app_theme.dart';
 
 class MapaSeguimientoInline extends StatefulWidget {
   final String viajeId;
@@ -42,7 +43,7 @@ class _MapaSeguimientoInlineState extends State<MapaSeguimientoInline> {
         if (!snap.hasData || !snap.data!.exists) {
           return const SizedBox(
             height: 160,
-            child: Center(child: CircularProgressIndicator(color: Color(0xFF1E6BFF))),
+            child: Center(child: CircularProgressIndicator(color: CabifyColors.primary)),
           );
         }
 
@@ -86,6 +87,7 @@ class _MapaSeguimientoInlineState extends State<MapaSeguimientoInline> {
                 child: GoogleMap(
                   initialCameraPosition: CameraPosition(target: pos, zoom: 12),
                   onMapCreated: (c) => _ctrl = c,
+                  myLocationEnabled: true,
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,

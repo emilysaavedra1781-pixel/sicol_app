@@ -33,6 +33,7 @@ class CalificacionService {
     required String viajeId,
     required String conductorUid,
     required int puntuacion,
+    required String reservaId,
     String? comentario,
   }) async {
     final pasajeroUid = FirebaseAuth.instance.currentUser?.uid;
@@ -49,13 +50,8 @@ class CalificacionService {
       throw Exception('Ya calificaste este viaje. Solo se permite una calificación por viaje');
     }
 
-    // CP06 — Solo viajes finalizados
-    final finalizado = await viajeEstaFinalizado(viajeId);
-    if (!finalizado) {
-      throw Exception('Solo puedes calificar viajes finalizados');
-    }
-
     final conductorRef = _db.collection('usuarios').doc(conductorUid);
+    final reservaRef = _db.collection('reservas').doc(reservaId);
     final calificacionRef = _db.collection('calificaciones').doc();
 
     // CP05 — Recalcular promedio dentro de una transacción
@@ -67,25 +63,26 @@ class CalificacionService {
       final totalCalificaciones = (data['totalCalificaciones'] as num?)?.toInt() ?? 0;
       final promedioActual = (data['promedioCalificacion'] as num?)?.toDouble() ?? 0.0;
 
-      // Fórmula: (promedioActual * total + nuevaPuntuacion) / (total + 1)
       final nuevoTotal = totalCalificaciones + 1;
-      final nuevoPromedio =
-          ((promedioActual * totalCalificaciones) + puntuacion) / nuevoTotal;
+      final nuevoPromedio = ((promedioActual * totalCalificaciones) + puntuacion) / nuevoTotal;
 
-      // Guardar calificación
       tx.set(calificacionRef, {
         'viajeId': viajeId,
+        'reservaId': reservaId,
         'conductorUid': conductorUid,
         'pasajeroUid': pasajeroUid,
         'puntuacion': puntuacion,
-        'comentario': comentario ?? '', // CP02 — comentario opcional
+        'comentario': comentario ?? '',
         'fechaCreacion': FieldValue.serverTimestamp(),
       });
 
-      // Actualizar promedio del conductor
       tx.update(conductorRef, {
         'promedioCalificacion': double.parse(nuevoPromedio.toStringAsFixed(2)),
         'totalCalificaciones': nuevoTotal,
+      });
+
+      tx.update(reservaRef, {
+        'estado': 'calificada', // Marcamos para mover al historial
       });
     });
   }

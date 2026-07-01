@@ -4,6 +4,10 @@ import '../../services/booking_service.dart';
 import 'buscar_tab.dart';
 import 'reservas_tab.dart';
 import 'perfil_tab.dart';
+import 'reservas_historial_view.dart';
+import '../shared/reportar_incidencia_view.dart';
+import '../shared/mis_incidencias_view.dart';
+import '../../widgets/logout_helper.dart';
 
 class PassengerHomeView extends StatefulWidget {
   const PassengerHomeView({super.key});
@@ -25,17 +29,53 @@ class _PassengerHomeViewState extends State<PassengerHomeView> {
       builder: (context, snapshot) {
         final uid = snapshot.data?.uid ?? '';
 
-        if (uid.isEmpty) {
-          return const Scaffold(
-            backgroundColor: Color(0xFF0A0E1A),
-            body: Center(
-              child: CircularProgressIndicator(color: Color(0xFF1E6BFF)),
-            ),
-          );
-        }
+        if (uid.isEmpty) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
         return Scaffold(
-          backgroundColor: const Color(0xFF0A0E1A),
+          appBar: _tabIndex != 0 ? null : AppBar(
+            title: const Text('SICOL'),
+          ),
+          drawer: Drawer(
+            child: Column(
+              children: [
+                DrawerHeader(
+                  decoration: BoxDecoration(color: Theme.of(context).primaryColor),
+                  child: const Center(child: Text('MENÚ PASAJERO', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.history),
+                  title: const Text('MI HISTORIAL'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ReservasHistorialView(uid: uid)));
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.report_problem),
+                  title: const Text('REPORTAR PROBLEMA'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ReportarIncidenciaView(rolUsuario: 'pasajero', viajeId: 'GENERAL')));
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.list_alt),
+                  title: const Text('MIS INCIDENCIAS'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const MisIncidenciasView()));
+                  },
+                ),
+                const Spacer(),
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('CERRAR SESIÓN'),
+                  onTap: () => LogoutHelper.showLogoutDialog(context),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
           body: IndexedStack(
             index: _tabIndex,
             children: [
@@ -47,17 +87,10 @@ class _PassengerHomeViewState extends State<PassengerHomeView> {
           bottomNavigationBar: BottomNavigationBar(
             currentIndex: _tabIndex,
             onTap: (i) => setState(() => _tabIndex = i),
-            backgroundColor: const Color(0xFF111827),
-            selectedItemColor: const Color(0xFF1E6BFF),
-            unselectedItemColor: const Color(0xFF6B7280),
-            type: BottomNavigationBarType.fixed,
             items: const [
-              BottomNavigationBarItem(
-                  icon: Icon(Icons.search_rounded), label: 'Buscar'),
-              BottomNavigationBarItem(
-                  icon: Icon(Icons.confirmation_number_rounded), label: 'Mis Reservas'),
-              BottomNavigationBarItem(
-                  icon: Icon(Icons.person_rounded), label: 'Perfil'),
+              BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: 'Viajar'),
+              BottomNavigationBarItem(icon: Icon(Icons.confirmation_number_rounded), label: 'Mis Viajes'),
+              BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Perfil'),
             ],
           ),
         );

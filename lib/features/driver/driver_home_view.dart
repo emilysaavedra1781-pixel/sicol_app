@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../services/auth_service.dart';
 import '../../services/trip_service.dart';
 import '../../services/location_service.dart';
-import '../auth/login/login_view.dart';
+import '../../app_theme.dart';
 import 'driver_trip_view.dart';
 import 'driver_drawer.dart';
 
@@ -16,372 +17,148 @@ class DriverHomeView extends StatefulWidget {
 }
 
 class _DriverHomeViewState extends State<DriverHomeView> {
+  final _authService = AuthService();
   final _tripService = TripService();
   final _locationService = LocationService();
-  bool _iniciando = false;
+  bool _poniendoDisponible = false;
+  Position? _currentPosition;
+  bool _gpsError = false;
 
-  Future<void> _logout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF111827),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Cerrar sesión',
-            style: TextStyle(color: Colors.white)),
-        content: const Text(
-          '¿Estás seguro de que deseas cerrar sesión?',
-          style: TextStyle(color: Color(0xFF6B7280)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar',
-                style: TextStyle(color: Color(0xFF6B7280))),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Cerrar sesión',
-                style: TextStyle(color: Color(0xFFFF3B30))),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true && mounted) {
-      await AuthService().signOut();
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginView()),
-            (route) => false,
-      );
-    }
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialGps();
   }
 
-  // RF34 — Verifica la ubicación del conductor antes de iniciar el viaje.
-  // Si está fuera del radio permitido, muestra advertencia pero permite
-  // continuar (según criterio de aceptación de la matriz de requerimientos).
-  // Retorna `true` si se debe continuar con el inicio del viaje.
-  Future<bool> _verificarUbicacionConAdvertencia() async {
-    VerificacionUbicacion resultado;
+  Future<void> _checkInitialGps() async {
     try {
-      resultado = await _locationService.verificarUbicacionParaIniciarViaje();
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      if (mounted) setState(() => _currentPosition = pos);
     } catch (e) {
-      if (!mounted) return false;
-      final continuar = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF111827),
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(
-            children: [
-              Icon(Icons.location_off_rounded,
-                  color: Color(0xFFF59E0B), size: 22),
-              SizedBox(width: 8),
-              Text('No se pudo verificar tu ubicación',
-                  style: TextStyle(color: Colors.white, fontSize: 15)),
-            ],
-          ),
-          content: Text(
-            e.toString().replaceFirst('Exception: ', ''),
-            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar',
-                  style: TextStyle(color: Color(0xFF6B7280))),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF59E0B),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                elevation: 0,
-              ),
-              child: const Text('Continuar igual'),
-            ),
-          ],
-        ),
-      );
-      return continuar == true;
-    }
-
-    if (resultado.dentroDelRango) return true;
-
-    if (!mounted) return false;
-
-    // Fuera del radio permitido → advertencia, pero se permite continuar.
-    final continuar = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF111827),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded,
-                color: Color(0xFFF59E0B), size: 22),
-            SizedBox(width: 8),
-            Text('Estás lejos del paradero',
-                style: TextStyle(color: Colors.white, fontSize: 15)),
-          ],
-        ),
-        content: Text(
-          'Estás a ${resultado.distanciaMetros.toStringAsFixed(0)} metros '
-              'del punto de inicio habitual. ¿Deseas iniciar el viaje de todas formas?',
-          style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar',
-                style: TextStyle(color: Color(0xFF6B7280))),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFF59E0B),
-              foregroundColor: Colors.white,
-              shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              elevation: 0,
-            ),
-            child: const Text('Continuar igual'),
-          ),
-        ],
-      ),
-    );
-
-    return continuar == true;
-  }
-
-  // ✅ Sin diálogo de ruta — solo inicia directo (con verificación de GPS)
-  Future<void> _iniciarViaje(Map<String, dynamic> conductorData) async {
-    setState(() => _iniciando = true);
-
-    final continuar = await _verificarUbicacionConAdvertencia();
-    if (!continuar) {
-      if (mounted) setState(() => _iniciando = false);
-      return;
-    }
-
-    try {
-      final viajeId = await _tripService.iniciarViaje(
-        conductorData: conductorData,
-      );
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => DriverTripView(
-            viajeId: viajeId,
-            conductorData: conductorData,
-          ),
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: const Color(0xFFFF3B30),
-            behavior: SnackBarBehavior.floating,
-            shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _iniciando = false);
+      if (mounted) setState(() => _gpsError = true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
-      drawer: const DriverDrawer(currentRoute: 'home'),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111827),
+        backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('SICOL — Conductor',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600)),
+        title: const Text('Panel de Conductor', style: TextStyle(color: CabifyColors.textPrimary)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout, color: Color(0xFF6B7280)),
-            tooltip: 'Cerrar sesión',
-            onPressed: _logout,
-          ),
+            icon: const Icon(Icons.logout, color: CabifyColors.primary),
+            onPressed: () => _authService.signOut(),
+          )
         ],
       ),
-      body: uid == null
-          ? const Center(
-          child: CircularProgressIndicator(color: Color(0xFF1E6BFF)))
-          : FutureBuilder<DocumentSnapshot>(
-        future: FirebaseFirestore.instance
-            .collection('usuarios')
-            .doc(uid)
-            .get(),
+      drawer: const DriverDrawer(currentRoute: '/home'),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance.collection('usuarios').doc(user?.uid).snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF1E6BFF)),
-            );
-          }
-
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(
-              child: Text('Error al cargar datos.',
-                  style: TextStyle(color: Colors.white)),
-            );
-          }
-
-          final data = snapshot.data!.data() as Map<String, dynamic>;
-          final nombre = data['nombre'] ?? '';
-          final apellido = data['apellido'] ?? '';
-          final codigo = data['codigoConductor'] ?? '-';
-          final vehiculo =
-              data['vehiculo'] as Map<String, dynamic>? ?? {};
-
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          
+          final userData = snapshot.data!.data() as Map<String, dynamic>;
+          
           return StreamBuilder<QuerySnapshot>(
             stream: _tripService.getViajeActivoStream(),
             builder: (context, tripSnap) {
-              final tieneViajeActivo = tripSnap.hasData &&
-                  tripSnap.data!.docs.isNotEmpty;
-              final viajeDoc =
-              tieneViajeActivo ? tripSnap.data!.docs.first : null;
+              final tieneViaje = tripSnap.hasData && tripSnap.data!.docs.isNotEmpty;
 
-              return SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 28, vertical: 32),
+              return Padding(
+                padding: const EdgeInsets.all(24),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // ── Bienvenida ──────────────────────────────────
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFF1E6BFF),
-                            Color(0xFF0A4BCC),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
+                    if (userData['fotoUrl'] != null)
+                      CircleAvatar(
+                        radius: 60,
+                        backgroundImage: NetworkImage(userData['fotoUrl']),
+                      )
+                    else
+                      const CircleAvatar(
+                        radius: 60,
+                        backgroundColor: Color(0xFFF3F4F6),
+                        child: Icon(Icons.person, size: 60, color: CabifyColors.textSecondary),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.drive_eta_rounded,
-                              color: Colors.white, size: 40),
-                          const SizedBox(height: 12),
-                          Text(
-                            '¡Bienvenido, $nombre!',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Panel del conductor',
-                            style: TextStyle(
-                                color: Color(0xFFBFD7FF), fontSize: 14),
-                          ),
-                        ],
-                      ),
-                    ),
                     const SizedBox(height: 24),
-
-                    // ── Viaje activo o botón iniciar ────────────────
-                    tieneViajeActivo
-                        ? _viajeActivoBanner(viajeDoc!, data)
-                        : _botonIniciarViaje(data),
-
-                    const SizedBox(height: 16),
-
-                    // ── Código conductor ─────────────────────────────
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF111827),
+                    Card(
+                      color: Colors.white,
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        side: const BorderSide(color: CabifyColors.border),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          children: [
+                            Text('¡Hola, ${userData['nombre']}!', 
+                              style: const TextStyle(color: CabifyColors.textPrimary, fontSize: 24, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 8),
+                            Text(tieneViaje 
+                              ? 'Tienes un viaje en curso. Debes cerrarlo antes de iniciar uno nuevo.' 
+                              : '¿Listo para empezar a trabajar?', 
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: CabifyColors.textSecondary)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (userData['vehiculo']?['fotoVehiculoUrl'] != null) ...[
+                      const SizedBox(height: 24),
+                      ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        border:
-                        Border.all(color: const Color(0xFF1F2937)),
+                        child: Image.network(userData['vehiculo']['fotoVehiculoUrl'], height: 120, width: double.infinity, fit: BoxFit.cover),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Tu código de conductor',
-                            style: TextStyle(
-                                color: Color(0xFF6B7280), fontSize: 13),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            codigo,
-                            style: const TextStyle(
-                              color: Color(0xFF1E6BFF),
-                              fontSize: 28,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 4,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Guarda este código para iniciar sesión.',
-                            style: TextStyle(
-                                color: Color(0xFF4B5563), fontSize: 12),
-                          ),
-                        ],
+                    ],
+                    const SizedBox(height: 48),
+                    if (_currentPosition == null && !_gpsError)
+                      const CircularProgressIndicator(color: CabifyColors.primary)
+                    else if (_gpsError)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                        child: const Column(
+                          children: [
+                            Icon(Icons.location_off_rounded, color: Colors.red, size: 32),
+                            SizedBox(height: 8),
+                            Text('No se puede obtener tu ubicación. Activa el GPS para continuar.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      )
+                    else if (!tieneViaje)
+                      ElevatedButton(
+                        onPressed: _poniendoDisponible ? null : () => _iniciarDisponibilidad(userData),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: CabifyColors.primary,
+                          minimumSize: const Size(double.infinity, 56),
+                        ),
+                        child: Text(_poniendoDisponible ? 'VERIFICANDO...' : 'INICIAR VIAJE'), // CP02
+                      )
+                    else
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => DriverTripView(
+                            viajeId: tripSnap.data!.docs.first.id,
+                            conductorData: userData,
+                          )));
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          minimumSize: const Size(double.infinity, 56),
+                        ),
+                        child: const Text('IR A MI VIAJE ACTIVO'), // CP01, CP03
                       ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ── Datos personales ─────────────────────────────
-                    _infoCard(
-                      titulo: 'Datos personales',
-                      items: [
-                        _InfoItem(Icons.person_outline, 'Nombre',
-                            '$nombre $apellido'),
-                        _InfoItem(
-                            Icons.badge_outlined, 'DNI', data['dni'] ?? '-'),
-                        _InfoItem(Icons.phone_outlined, 'Celular',
-                            data['celular'] ?? '-'),
-                        _InfoItem(Icons.card_membership_outlined,
-                            'Licencia', data['numeroLicencia'] ?? '-'),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ── Vehículo ─────────────────────────────────────
-                    _infoCard(
-                      titulo: 'Mi vehículo',
-                      items: [
-                        _InfoItem(Icons.directions_car_outlined, 'Placa',
-                            vehiculo['placa'] ?? '-'),
-                        _InfoItem(
-                            Icons.directions_car_outlined,
-                            'Vehículo',
-                            '${vehiculo['marca'] ?? ''} ${vehiculo['modelo'] ?? ''}'),
-                        _InfoItem(Icons.color_lens_outlined, 'Color',
-                            vehiculo['color'] ?? '-'),
-                        _InfoItem(Icons.people_outline, 'Capacidad',
-                            '${vehiculo['capacidad'] ?? '-'} pasajeros'),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
                   ],
                 ),
               );
@@ -392,177 +169,66 @@ class _DriverHomeViewState extends State<DriverHomeView> {
     );
   }
 
-  Widget _botonIniciarViaje(Map<String, dynamic> conductorData) {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton.icon(
-        onPressed: _iniciando ? null : () => _iniciarViaje(conductorData),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF10B981),
-          foregroundColor: Colors.white,
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 0,
-        ),
-        icon: _iniciando
-            ? const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-                color: Colors.white, strokeWidth: 2.5))
-            : const Icon(Icons.play_circle_outline_rounded, size: 24),
-        label: Text(
-          _iniciando ? 'Verificando ubicación...' : 'Poner colectivo disponible',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
-      ),
-    );
-  }
+  Future<void> _iniciarDisponibilidad(Map<String, dynamic> userData) async {
+    setState(() => _poniendoDisponible = true);
+    
+    try {
+      // CP05: Verificación GPS
+      final verificacion = await _locationService.verificarUbicacionParaIniciarViaje();
+      
+      if (!mounted) return;
 
-  Widget _viajeActivoBanner(
-      DocumentSnapshot viajeDoc, Map<String, dynamic> conductorData) {
-    final viaje = viajeDoc.data() as Map<String, dynamic>;
-    final rutaLabel = viaje['rutaLabel'] ?? 'Sin ruta asignada';
-    final asientosOcupados = viaje['asientosOcupados'] ?? 0;
-    final capacidad = viaje['capacidad'] ?? 4;
-    final estado = viaje['estado'] ?? 'activo';
-    final enCamino = estado == 'en_camino';
-
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => DriverTripView(
-            viajeId: viajeDoc.id,
-            conductorData: conductorData,
+      if (!verificacion.dentroDelRango) {
+        // CP02: Advertencia por ubicación incorrecta
+        final bool? forzar = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Ubicación incorrecta', style: TextStyle(color: CabifyColors.textPrimary, fontWeight: FontWeight.bold)),
+            content: const Text('No estás en el punto de partida predeterminado. ¿Deseas iniciar el viaje desde tu ubicación actual?',
+              style: TextStyle(color: CabifyColors.textSecondary)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCELAR', style: TextStyle(color: CabifyColors.textSecondary))),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: CabifyColors.primary, foregroundColor: Colors.white),
+                child: const Text('INICIAR DE TODAS FORMAS'),
+              ),
+            ],
           ),
-        ),
-      ),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: (enCamino
-              ? const Color(0xFF1E6BFF)
-              : const Color(0xFF10B981))
-              .withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-              color: (enCamino
-                  ? const Color(0xFF1E6BFF)
-                  : const Color(0xFF10B981))
-                  .withValues(alpha: 0.4)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: (enCamino
-                    ? const Color(0xFF1E6BFF)
-                    : const Color(0xFF10B981))
-                    .withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                enCamino
-                    ? Icons.directions_car_rounded
-                    : Icons.hourglass_top_rounded,
-                color: enCamino
-                    ? const Color(0xFF1E6BFF)
-                    : const Color(0xFF10B981),
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    enCamino ? 'En camino' : 'Esperando pasajeros',
-                    style: TextStyle(
-                        color: enCamino
-                            ? const Color(0xFF1E6BFF)
-                            : const Color(0xFF10B981),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    rutaLabel,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700),
-                  ),
-                  Text('$asientosOcupados/$capacidad asientos',
-                      style: const TextStyle(
-                          color: Color(0xFF6B7280), fontSize: 12)),
-                ],
-              ),
-            ),
-            Icon(Icons.arrow_forward_ios_rounded,
-                color: enCamino
-                    ? const Color(0xFF1E6BFF)
-                    : const Color(0xFF10B981),
-                size: 16),
-          ],
-        ),
-      ),
-    );
-  }
+        );
 
-  Widget _infoCard(
-      {required String titulo, required List<_InfoItem> items}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF1F2937)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(titulo,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 16),
-          ...items.map((item) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: [
-                Icon(item.icon,
-                    color: const Color(0xFF6B7280), size: 16),
-                const SizedBox(width: 10),
-                Text('${item.label}: ',
-                    style: const TextStyle(
-                        color: Color(0xFF6B7280), fontSize: 13)),
-                Expanded(
-                  child: Text(item.value,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500)),
-                ),
-              ],
-            ),
-          )),
-        ],
-      ),
-    );
-  }
-}
+        if (forzar != true) {
+          setState(() => _poniendoDisponible = false);
+          return;
+        }
+      }
 
-class _InfoItem {
-  final IconData icon;
-  final String label;
-  final String value;
-  const _InfoItem(this.icon, this.label, this.value);
+      // CP01: Registro viaje activo
+      final viajeId = await _tripService.iniciarViaje(
+        conductorData: userData,
+        lat: _currentPosition?.latitude,
+        lng: _currentPosition?.longitude,
+        ruta: verificacion.dentroDelRango ? verificacion.rutaMasCercana : null,
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Viaje iniciado exitosamente'), backgroundColor: Color(0xFF10B981))
+        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => DriverTripView(
+          viajeId: viajeId,
+          conductorData: userData,
+        )));
+      }
+      
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _poniendoDisponible = false);
+    }
+  }
 }

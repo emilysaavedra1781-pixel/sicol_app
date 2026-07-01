@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import 'paraderos_constants.dart';
 import 'colectivo_detalle_view.dart';
+import 'rutas_paraderos_view.dart';
+import '../../app_theme.dart';
 
 class BuscarTab extends StatefulWidget {
   const BuscarTab({super.key});
@@ -15,51 +18,149 @@ class _BuscarTabState extends State<BuscarTab> {
 
   String? _rutaSeleccionada;
   String? _paraderoSeleccionado;
+  Position? _currentPosition;
+  bool _gpsActive = false;
+
+  final TextEditingController _searchCtrl = TextEditingController();
 
   List<String> get _paraderosActuales =>
       _rutaSeleccionada != null ? paraderosPorRuta[_rutaSeleccionada!]! : [];
 
   @override
+  void initState() {
+    super.initState();
+    _checkGpsStatus();
+  }
+
+  Future<void> _checkGpsStatus() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) _showGpsDialog('Para continuar necesitas activar la ubicación de tu dispositivo.');
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (mounted) _showGpsDialog('Los permisos de ubicación son necesarios para realizar reservas.');
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) _showGpsDialog('Permisos denegados permanentemente. Actívalos en la configuración.');
+      return;
+    }
+
+    setState(() => _gpsActive = true);
+    _captureLocation();
+  }
+
+  void _showGpsDialog(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ubicación requerida', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Geolocator.openLocationSettings();
+              if (mounted) Navigator.pop(ctx);
+              _checkGpsStatus();
+            },
+            child: const Text('ACTIVAR UBICACIÓN', style: TextStyle(color: CabifyColors.primary, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _captureLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high
+      );
+      setState(() => _currentPosition = position);
+    } catch (e) {
+      debugPrint('Error capturando GPS: $e');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1E6BFF), Color(0xFF0A4BCC)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: CabifyColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: CabifyColors.primary.withValues(alpha: 0.3),
+                      blurRadius: 15,
+                      offset: const Offset(0, 8),
+                    )
+                  ],
                 ),
-                borderRadius: BorderRadius.circular(20),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.directions_bus_rounded, color: Colors.white, size: 40),
+                    SizedBox(height: 16),
+                    Text('¿A dónde vas hoy?',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700)),
+                    SizedBox(height: 4),
+                    Text('Busca tu ruta y reserva en segundos',
+                        style: TextStyle(color: Colors.white70, fontSize: 14)),
+                  ],
+                ),
               ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.directions_bus_rounded, color: Colors.white, size: 36),
-                  SizedBox(height: 10),
-                  Text('¿A dónde vas hoy?',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700)),
-                  SizedBox(height: 4),
-                  Text('Ruta Carretera Central',
-                      style: TextStyle(color: Color(0xFFBFD7FF), fontSize: 13)),
-                ],
+              const SizedBox(height: 24),
+              
+              // RF52: Acceso a la Visualización Gráfica de Rutas
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const RutasParaderosView()),
+                    );
+                  },
+                  icon: const Icon(Icons.map_outlined, size: 18),
+                  label: const Text('VER RUTAS Y PARADEROS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    side: const BorderSide(color: CabifyColors.primary, width: 1.5),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            _buildSelectorRuta(),
-            const SizedBox(height: 24),
-            if (_rutaSeleccionada != null && _paraderoSeleccionado != null)
-              _buildListaColectivos(),
-          ],
+
+              const SizedBox(height: 32),
+              _buildSelectorRuta(),
+              const SizedBox(height: 32),
+              if (_rutaSeleccionada != null && _paraderoSeleccionado != null)
+                _buildListaColectivos(),
+            ],
+          ),
         ),
       ),
     );
@@ -69,51 +170,95 @@ class _BuscarTabState extends State<BuscarTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('¿A dónde vas?',
-            style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 10),
+        Text('Selecciona tu destino',
+            style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 16),
         Row(
           children: [
             _botonRuta(label: 'Chosica → Lima', valor: 'chosica_lima', icono: Icons.arrow_forward_rounded),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             _botonRuta(label: 'Lima → Chosica', valor: 'lima_chosica', icono: Icons.arrow_back_rounded),
           ],
         ),
         if (_rutaSeleccionada != null) ...[
-          const SizedBox(height: 14),
-          const Text('Tu paradero de recojo',
-              style: TextStyle(color: Color(0xFF6B7280), fontSize: 13, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF111827),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF1F2937)),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _paraderoSeleccionado,
-                hint: const Text('Elige tu paradero',
-                    style: TextStyle(color: Color(0xFF4B5563), fontSize: 14)),
-                dropdownColor: const Color(0xFF111827),
-                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF6B7280)),
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-                items: _paraderosActuales
-                    .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                    .toList(),
-                onChanged: (val) => setState(() => _paraderoSeleccionado = val),
-              ),
+          const SizedBox(height: 32),
+          _seccionTitulo('BÚSQUEDA DE PARADERO'),
+          const SizedBox(height: 12),
+          Autocomplete<String>(
+            optionsBuilder: (TextEditingValue textEditingValue) {
+              if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
+              return _paraderosActuales.where((p) => p.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+            },
+            onSelected: (String selection) {
+              setState(() => _paraderoSeleccionado = selection);
+              _captureLocation();
+            },
+            fieldViewBuilder: (ctx, ctrl, focus, onFieldSubmitted) {
+              return TextField(
+                controller: ctrl,
+                focusNode: focus,
+                decoration: const InputDecoration(
+                  hintText: 'Busca tu paradero...',
+                  prefixIcon: Icon(Icons.search_rounded),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 24),
+          _seccionTitulo('PARADEROS FRECUENTES'),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 40,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _paraderosActuales.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (ctx, i) {
+                final p = _paraderosActuales[i];
+                final sel = _paraderoSeleccionado == p;
+                return FilterChip(
+                  label: Text(p, style: TextStyle(fontSize: 12, color: sel ? Colors.white : CabifyColors.textPrimary)),
+                  selected: sel,
+                  selectedColor: CabifyColors.primary,
+                  onSelected: (val) {
+                    setState(() => _paraderoSeleccionado = val ? p : null);
+                    if (val) _captureLocation();
+                  },
+                );
+              },
             ),
           ),
+          if (_paraderoSeleccionado != null) ...[
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF10B981)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, color: Color(0xFF10B981), size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text('Recojo en: $_paraderoSeleccionado',
+                        style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ],
     );
   }
 
+  Widget _seccionTitulo(String texto) => Text(texto, style: const TextStyle(color: CabifyColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1));
+
   Widget _botonRuta({required String label, required String valor, required IconData icono}) {
     final sel = _rutaSeleccionada == valor;
+    
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() {
@@ -122,22 +267,29 @@ class _BuscarTabState extends State<BuscarTab> {
         }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+          padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
-            color: sel ? const Color(0xFF1E6BFF) : const Color(0xFF111827),
+            color: sel ? CabifyColors.primary : Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: sel ? const Color(0xFF1E6BFF) : const Color(0xFF1F2937)),
+            border: Border.all(color: sel ? CabifyColors.primary : CabifyColors.border),
+            boxShadow: sel ? [
+              BoxShadow(
+                color: CabifyColors.primary.withOpacity(0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              )
+            ] : null,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icono, color: sel ? Colors.white : const Color(0xFF6B7280), size: 16),
-              const SizedBox(width: 6),
+              Icon(icono, color: sel ? Colors.white : CabifyColors.textSecondary, size: 18),
+              const SizedBox(width: 8),
               Flexible(
                 child: Text(label,
                     style: TextStyle(
-                        color: sel ? Colors.white : const Color(0xFF6B7280),
-                        fontSize: 12,
+                        color: sel ? Colors.white : CabifyColors.textSecondary,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600),
                     overflow: TextOverflow.ellipsis),
               ),
@@ -148,87 +300,13 @@ class _BuscarTabState extends State<BuscarTab> {
     );
   }
 
-  // ── Widget calificación del conductor ─────────────────────────────────────
-  Widget _buildCalificacionConductor(String conductorUid) {
-    if (conductorUid.isEmpty) return const SizedBox();
-
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(conductorUid)
-          .get(),
-      builder: (context, snap) {
-        if (!snap.hasData || !snap.data!.exists) return const SizedBox();
-
-        final data = snap.data!.data() as Map<String, dynamic>;
-        final promedio = (data['promedioCalificacion'] as num?)?.toDouble() ?? 0.0;
-        final total = (data['totalCalificaciones'] as num?)?.toInt() ?? 0;
-
-        if (total == 0) {
-          return Row(children: [
-            const Icon(Icons.star_border_rounded,
-                size: 14, color: Color(0xFF4B5563)),
-            const SizedBox(width: 4),
-            const Text('Sin calificaciones aún',
-                style: TextStyle(color: Color(0xFF4B5563), fontSize: 11)),
-          ]);
-        }
-
-        return Row(children: [
-          // Estrellas
-          ...List.generate(5, (i) {
-            if (i < promedio.floor()) {
-              return const Icon(Icons.star_rounded,
-                  size: 14, color: Color(0xFFF59E0B));
-            } else if (i < promedio && promedio - i >= 0.5) {
-              return const Icon(Icons.star_half_rounded,
-                  size: 14, color: Color(0xFFF59E0B));
-            } else {
-              return const Icon(Icons.star_border_rounded,
-                  size: 14, color: Color(0xFF4B5563));
-            }
-          }),
-          const SizedBox(width: 6),
-          Text(
-            promedio.toStringAsFixed(1),
-            style: const TextStyle(
-                color: Color(0xFFF59E0B),
-                fontSize: 12,
-                fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            '($total)',
-            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11),
-          ),
-        ]);
-      },
-    );
-  }
-
   Widget _buildListaColectivos() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Text('Colectivos disponibles',
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E6BFF).withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                _rutaSeleccionada == 'chosica_lima' ? 'Chosica → Lima' : 'Lima → Chosica',
-                style: const TextStyle(color: Color(0xFF1E6BFF), fontSize: 10),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
+        Text('Colectivos disponibles',
+            style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 16),
         StreamBuilder<QuerySnapshot>(
           stream: _db
               .collection('viajes')
@@ -244,147 +322,138 @@ class _BuscarTabState extends State<BuscarTab> {
                   .snapshots(),
               builder: (context, snapNulos) {
                 if (!snapRuta.hasData || !snapNulos.hasData) {
-                  return const Center(child: CircularProgressIndicator(color: Color(0xFF1E6BFF)));
+                  return const Center(child: CircularProgressIndicator());
                 }
 
                 final mapaViajes = <String, DocumentSnapshot>{};
-                for (final doc in snapRuta.data!.docs) mapaViajes[doc.id] = doc;
-                for (final doc in snapNulos.data!.docs) mapaViajes[doc.id] = doc;
+                for (final doc in snapRuta.data!.docs) {
+                  mapaViajes[doc.id] = doc;
+                }
+                for (final doc in snapNulos.data!.docs) {
+                  mapaViajes[doc.id] = doc;
+                }
+                
                 final viajes = mapaViajes.values.toList();
+                // Cola de prioridad: ordenar por fecha de inicio
+                viajes.sort((a, b) {
+                  final tA = (a.data() as Map)['iniciadoEn'] as Timestamp?;
+                  final tB = (b.data() as Map)['iniciadoEn'] as Timestamp?;
+                  if (tA == null || tB == null) return 0;
+                  return tA.compareTo(tB);
+                });
 
                 if (viajes.isEmpty) {
-                  return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF111827),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFF1F2937)),
-                    ),
-                    child: const Column(
-                      children: [
-                        Icon(Icons.directions_bus_outlined, color: Color(0xFF374151), size: 40),
-                        SizedBox(height: 10),
-                        Text('No hay colectivos disponibles para esta ruta',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-                      ],
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        children: [
+                          Icon(Icons.directions_bus_outlined, color: Colors.grey[300], size: 56),
+                          const SizedBox(height: 16),
+                          const Text('No hay colectivos disponibles en este momento. Intenta más tarde.', // CP02
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Color(0xFF6B7280))),
+                        ],
+                      ),
                     ),
                   );
                 }
 
                 return Column(
-                  children: viajes.map((doc) {
+                  children: viajes.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final doc = entry.value;
                     final viaje = doc.data() as Map<String, dynamic>;
-                    final rutaLabel = viaje['rutaLabel'] ??
-                        (_rutaSeleccionada == 'chosica_lima' ? 'Chosica → Lima' : 'Lima → Chosica');
                     final capacidad = (viaje['capacidad'] as num?)?.toInt() ?? 4;
                     final asientosOcupados = (viaje['asientosOcupados'] as num?)?.toInt() ?? 0;
                     final libres = capacidad - asientosOcupados;
+                    final esPrimero = index == 0;
+                    
+                    // CP01: Datos del vehículo
+                    final marca = viaje['vehiculo']?['marca'] ?? '';
+                    final modelo = viaje['vehiculo']?['modelo'] ?? '';
+                    final placa = viaje['vehiculo']?['placa'] ?? '';
+                    
+                    // CP01: Hora de salida
+                    final fSalida = viaje['fechaSalida'] as Timestamp?;
+                    final horaSalida = fSalida != null 
+                        ? '${fSalida.toDate().hour.toString().padLeft(2, '0')}:${fSalida.toDate().minute.toString().padLeft(2, '0')}'
+                        : 'Pronto';
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF111827),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFF1F2937)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(rutaLabel,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 15)),
-                              ),
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!esPrimero)
                               Container(
+                                margin: const EdgeInsets.only(bottom: 12),
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF1E6BFF).withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
+                                decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                                child: const Text('PRÓXIMO EN SALIR', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                              ),
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: CabifyColors.primary.withValues(alpha: 0.1),
+                                  backgroundImage: viaje['conductorFotoUrl'] != null ? NetworkImage(viaje['conductorFotoUrl']) : null,
+                                  child: viaje['conductorFotoUrl'] == null ? const Icon(Icons.person, size: 20, color: CabifyColors.primary) : null,
                                 ),
-                                child: const Text('S/ 15.00',
-                                    style: TextStyle(
-                                        color: Color(0xFF1E6BFF),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700)),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              const Icon(Icons.location_on_rounded, size: 13, color: Color(0xFF1E6BFF)),
-                              const SizedBox(width: 4),
-                              Text('Recojo en: $_paraderoSeleccionado',
-                                  style: const TextStyle(
-                                      color: Color(0xFF1E6BFF),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600)),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Icon(Icons.event_seat_rounded,
-                                  size: 14,
-                                  color: libres > 0 ? const Color(0xFF10B981) : const Color(0xFFFF3B30)),
-                              const SizedBox(width: 4),
-                              Text('$libres asiento(s) disponible(s)',
-                                  style: TextStyle(
-                                      color: libres > 0 ? const Color(0xFF10B981) : const Color(0xFFFF3B30),
-                                      fontSize: 12)),
-                              const SizedBox(width: 12),
-                              const Icon(Icons.person_outline, size: 14, color: Color(0xFF6B7280)),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(viaje['conductorNombre'] ?? 'Conductor',
-                                    style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
-                                    overflow: TextOverflow.ellipsis),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          // ← Calificación del conductor
-                          _buildCalificacionConductor(viaje['conductorUid'] ?? ''),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 44,
-                            child: ElevatedButton.icon(
-                              onPressed: libres > 0
-                                  ? () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ColectivoDetalleView(
-                                    viajeId: doc.id,
-                                    paradero: _paraderoSeleccionado!,
-                                    rutaSeleccionada: _rutaSeleccionada,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(viaje['conductorNombre'] ?? 'Conductor',
+                                          style: const TextStyle(
+                                              color: CabifyColors.textPrimary,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 16)),
+                                      _buildCalificacionRow(viaje['conductorUid']),
+                                    ],
                                   ),
                                 ),
-                              )
-                                  : null,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF1E6BFF),
-                                disabledBackgroundColor: const Color(0xFF1F2937),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                elevation: 0,
-                              ),
-                              icon: const Icon(Icons.confirmation_number_rounded, size: 16),
-                              label: Text(
-                                libres > 0 ? 'Reservar asiento' : 'Sin asientos disponibles',
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                              ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    const Text('SAlIDA', style: TextStyle(fontSize: 10, color: CabifyColors.textSecondary, fontWeight: FontWeight.bold)),
+                                    Text(horaSalida, style: const TextStyle(color: CabifyColors.primary, fontWeight: FontWeight.w800, fontSize: 15)),
+                                  ],
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 16),
+                            Text('$marca $modelo · $placa', style: const TextStyle(fontSize: 13, color: CabifyColors.textSecondary, fontWeight: FontWeight.w500)),
+                            const SizedBox(height: 12),
+                            if (viaje['vehiculo']?['fotoVehiculoUrl'] != null) ...[
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.network(viaje['vehiculo']['fotoVehiculoUrl'], height: 100, width: double.infinity, fit: BoxFit.cover),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                            Row(
+                              children: [
+                                const Icon(Icons.event_seat_rounded, size: 16, color: CabifyColors.textSecondary),
+                                const SizedBox(width: 8),
+                                Text('$libres asientos disponibles',
+                                    style: TextStyle(
+                                        color: libres > 0 ? CabifyColors.success : CabifyColors.error,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14)),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            ElevatedButton(
+                              onPressed: (libres > 0 && esPrimero)
+                                  ? () => _seleccionarColectivo(doc.id, viaje)
+                                  : null,
+                              child: Text(esPrimero ? 'RESERVAR AHORA' : 'EN TURNO DE ESPERA'),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   }).toList(),
@@ -394,6 +463,84 @@ class _BuscarTabState extends State<BuscarTab> {
           },
         ),
       ],
+    );
+  }
+
+  Future<void> _seleccionarColectivo(String viajeId, Map<String, dynamic> viaje) async {
+    // CP03: Concurrencia - Verificar disponibilidad real antes de avanzar
+    try {
+      final vRef = _db.collection('viajes').doc(viajeId);
+      final success = await _db.runTransaction<bool>((tx) async {
+        final snap = await tx.get(vRef);
+        if (!snap.exists) return false;
+        
+        final data = snap.data() as Map<String, dynamic>;
+        final capacidad = (data['capacidad'] as num?)?.toInt() ?? 4;
+        final ocupados = (data['asientosOcupados'] as num?)?.toInt() ?? 0;
+        
+        // También considerar asientos bloqueados temporalmente
+        final asientos = data['asientos'] as Map<String, dynamic>? ?? {};
+        int bloqueados = 0;
+        asientos.forEach((k, v) {
+          if (v['estado'] == 'bloqueado') bloqueados++;
+        });
+
+        if (ocupados + bloqueados >= capacidad) {
+          return false;
+        }
+        return true;
+      });
+
+      if (!mounted) return;
+
+      if (success) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ColectivoDetalleView(
+              viajeId: viajeId,
+              paradero: _paraderoSeleccionado!,
+              rutaSeleccionada: _rutaSeleccionada,
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Este colectivo acaba de llenarse. Por favor elige otro.'), // CP03
+            backgroundColor: CabifyColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: CabifyColors.error),
+        );
+      }
+    }
+  }
+
+  Widget _buildCalificacionRow(String? conductorUid) {
+    if (conductorUid == null) return const SizedBox();
+    return FutureBuilder<DocumentSnapshot>(
+      future: _db.collection('usuarios').doc(conductorUid).get(),
+      builder: (context, snap) {
+        final data = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final rating = (data['promedioCalificacion'] as num?)?.toDouble() ?? 0.0;
+        final total = (data['totalCalificaciones'] as num?)?.toInt() ?? 0;
+        
+        return Row(
+          children: [
+            Icon(Icons.star_rounded, color: rating > 0 ? Colors.amber : Colors.grey[300], size: 16),
+            const SizedBox(width: 4),
+            Text(rating > 0 ? rating.toStringAsFixed(1) : 'Nuevo', 
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: rating > 0 ? CabifyColors.textPrimary : CabifyColors.textSecondary)),
+            if (total > 0)
+              Text(' ($total)', style: const TextStyle(fontSize: 11, color: CabifyColors.textSecondary)),
+          ],
+        );
+      },
     );
   }
 }

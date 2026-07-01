@@ -14,15 +14,12 @@ class VerificacionUbicacion {
 }
 
 class LocationService {
-  static const double _radioPermitidoMetros = 200;
+  static const double _radioPermitidoMetros = 500; // RF34: Radio de 500 metros
+  static const double _radioCierreMetros = 500;
 
-  // 🔧 TODO: reemplaza estas coordenadas con las reales de cada ruta.
-  // Por ahora son aproximadas (Plaza de Armas Chosica / Plaza San Martín Lima).
-  // Para probar: cambia temporalmente una de las dos por tu ubicación actual
-  // (Google Maps → mantén presionado tu pin → copia lat, lng).
   static const Map<String, _Punto> _puntosInicioRuta = {
-    'chosica_lima': _Punto(-12.164316147650368, -76.98500568841465), // 🔧 TU ubicación, temporal
-    'lima_chosica': _Punto(-12.164316147650368, -76.98500568841465), // 🔧 TU ubicación, temporal (misma)
+    'chosica_lima': _Punto(-11.9347, -76.6952), // Inicio Chosica
+    'lima_chosica': _Punto(-12.193920, -76.971401), // Inicio Lima (Villa El Salvador 15842)
   };
 
   /// Pide permisos de ubicación si no los tiene.
@@ -112,11 +109,27 @@ class LocationService {
     );
 
     return VerificacionUbicacion(
-      dentroDelRango: distancia <= _radioPermitidoMetros,
+      dentroDelRango: distancia <= _radioCierreMetros,
       distanciaMetros: distancia,
       rutaMasCercana: rutaDestino,
     );
   }
+
+  Map<String, double> getCoordenadasInicio(String ruta) {
+    final punto = _puntosInicioRuta[ruta];
+    if (punto == null) return {'lat': 0.0, 'lng': 0.0};
+    return {'lat': punto.lat, 'lng': punto.lng};
+  }
+
+  Map<String, double> getCoordenadasDestino(String rutaActual) {
+    final rutaDestino =
+    rutaActual == 'chosica_lima' ? 'lima_chosica' : 'chosica_lima';
+    final punto = _puntosInicioRuta[rutaDestino];
+    if (punto == null) return {'lat': 0.0, 'lng': 0.0};
+    return {'lat': punto.lat, 'lng': punto.lng};
+  }
+
+  double getRadioPermitido() => _radioPermitidoMetros;
 }
 
 class _Punto {

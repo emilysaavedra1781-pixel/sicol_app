@@ -33,6 +33,9 @@ class TripService {
 
   Future<String> iniciarViaje({
     required Map<String, dynamic> conductorData,
+    double? lat,
+    double? lng,
+    String? ruta,
   }) async {
     final activo = await getViajeActivo();
     if (activo != null) {
@@ -54,23 +57,28 @@ class TripService {
       };
     }
 
-    // ✅ Sin ruta — la asigna el primer pasajero que reserve
+    String? rutaLabel;
+    if (ruta == 'chosica_lima') rutaLabel = 'Chosica → Lima';
+    if (ruta == 'lima_chosica') rutaLabel = 'Lima → Chosica';
+
+    // ✅ Si se detecta la ruta por ubicación, se asigna de una vez
     final docRef = await _db.collection('viajes').add({
       'conductorUid': _uid,
       'conductorNombre':
       '${conductorData['nombre']} ${conductorData['apellido']}',
-      'conductorCodigo': conductorData['codigoConductor'],
+      'conductorFotoUrl': conductorData['fotoUrl'],
+      'conductorCodigo': conductorData['conductorCodigo'],
       'vehiculo': vehiculo,
-      'ruta': null,      // se asigna cuando reserva el primer pasajero
-      'rutaLabel': null,
+      'ruta': ruta,      
+      'rutaLabel': rutaLabel,
       'estado': 'activo',
       'asientos': asientos,
       'capacidad': capacidad,
       'asientosOcupados': 0,
       'ingresoTotal': 0,
       'ubicacionActual': {
-        'lat': -11.9347, // posición por defecto (Chosica)
-        'lng': -76.6952,
+        'lat': lat ?? -11.9347, 
+        'lng': lng ?? -76.6952,
         'timestamp': FieldValue.serverTimestamp(),
       },
       'forzadoPorAdmin': false,
@@ -88,7 +96,27 @@ class TripService {
     await _db.collection('viajes').doc(viajeId).update({
       'estado': 'en_camino',
       'arranqueEn': FieldValue.serverTimestamp(),
+      'hora_arranque': FieldValue.serverTimestamp(), // CP05: Registrar hora de arranque
       'forzadoPorAdmin': false,
+    });
+  }
+
+  Future<void> abordarPasajero(String viajeId, int numAsiento, String reservaId) async {
+    await _db.runTransaction((tx) async {
+      final vRef = _db.collection('viajes').doc(viajeId);
+      final rRef = _db.collection('reservas').doc(reservaId);
+      
+      final vSnap = await tx.get(vRef);
+      final vData = vSnap.data()!;
+      final asientos = Map<String, dynamic>.from(vData['asientos'] ?? {});
+      final key = 'asiento_$numAsiento';
+      
+      if (asientos[key] != null) {
+        asientos[key]['estado'] = 'abordado';
+      }
+      
+      tx.update(vRef, {'asientos': asientos});
+      tx.update(rRef, {'estado': 'abordado'});
     });
   }
 
@@ -102,13 +130,59 @@ class TripService {
     });
   }
 
-  // ─── Cerrar viaje ─────────────────────────────────────────────────────────
+  // ─── Cerrar viaje y quedar disponible (RF42) ──────────────────────────────
 
-  Future<void> cerrarViaje(String viajeId) async {
-    await _db.collection('viajes').doc(viajeId).update({
+  Future<void> cerrarViajeConDisponibilidad({
+    required String viajeId,
+    required double lat,
+    required double lng,
+  }) async {
+    final batch = _db.batch();
+    final viajeRef = _db.collection('viajes').doc(viajeId);
+    final conductorRef = _db.collection('usuarios').doc(_uid);
+
+    // 1. Obtener datos del viaje para liberar asientos (CP04)
+    final vSnap = await viajeRef.get();
+    final vData = vSnap.data() as Map<String, dynamic>;
+    final capacidad = (vData['capacidad'] as num?)?.toInt() ?? 4;
+    
+    final asientosLiberados = <String, dynamic>{};
+    for (int i = 1; i <= capacidad; i++) {
+      asientosLiberados['asiento_$i'] = {
+        'numero': i,
+        'estado': 'libre',
+        'pasajero': null,
+      };
+    }
+
+    // 2. Finalizar viaje (sin limpiar asientos para conservar historial)
+    batch.update(viajeRef, {
       'estado': 'finalizado',
       'cerradoEn': FieldValue.serverTimestamp(),
     });
+
+    // 3. Actualizar disponibilidad del conductor (CP06)
+    batch.update(conductorRef, {
+      'ubicacion_actual': {
+        'lat': lat,
+        'lng': lng,
+        'timestamp': FieldValue.serverTimestamp(),
+      },
+      'disponible': true,
+      'viajeActivoId': null,
+    });
+
+    // 4. Marcar reservas como finalizadas para que los pasajeros puedan calificar
+    final reservasSnap = await _db.collection('reservas')
+        .where('viajeId', isEqualTo: viajeId)
+        .where('estado', whereIn: ['confirmada', 'abordado'])
+        .get();
+    
+    for (var doc in reservasSnap.docs) {
+      batch.update(doc.reference, {'estado': 'finalizada'});
+    }
+
+    await batch.commit();
   }
 
   // ─── Stream de un viaje específico ───────────────────────────────────────
