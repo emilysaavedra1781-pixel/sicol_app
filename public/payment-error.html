@@ -1,0 +1,39 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Pago fallido</title>
+    <style>
+        body {
+          font-family: sans-serif;
+          text-align: center;
+          padding-top: 60px;
+          background: #f9fafb;
+          color: #111827;
+        }
+        .icon { font-size: 48px; }
+        a {
+          display: inline-block;
+          margin-top: 20px;
+          padding: 12px 24px;
+          background: #EF4444;
+          color: white;
+          text-decoration: none;
+          border-radius: 8px;
+          font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<div class="icon">❌</div>
+<h2>Pago no completado</h2>
+<p>Regresando a SICOL...</p>
+<a href="sicolapp://payment-error">Abrir la app SICOL</a>
+<script>
+    setTimeout(function () {
+      window.location.href = "sicolapp://payment-error";
+    }, 800);
+</script>
+</body>
+</html>

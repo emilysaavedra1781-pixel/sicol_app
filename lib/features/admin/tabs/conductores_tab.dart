@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../services/auth_service.dart';
 import '../conductor_ratings_view.dart';
 import '../../../app_theme.dart';
@@ -190,11 +191,11 @@ class _ConductoresTabState extends State<ConductoresTab>
                 _infoRow(Icons.commute_outlined, 'Marca/Modelo', '${vehiculo['marca'] ?? ''} ${vehiculo['modelo'] ?? ''}'),
                 
                 const Divider(height: 32, color: CabifyColors.border),
-                const Text('DOCUMENTOS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: CabifyColors.textSecondary, letterSpacing: 1)),
+                const Text('DOCUMENTOS (PDF)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: CabifyColors.textSecondary, letterSpacing: 1)),
                 const SizedBox(height: 12),
-                _docLink('DNI', documentos['dni_url']),
-                _docLink('Licencia', documentos['licencia_url']),
-                _docLink('Tarjeta Propiedad', documentos['tarjeta_url']),
+                _docLink('DNI', documentos['dni']?['url']),
+                _docLink('Licencia', documentos['licencia']?['url']),
+                _docLink('Tarjeta Propiedad', documentos['tarjeta_propiedad']?['url']),
                 
                 const SizedBox(height: 24),
                 
@@ -288,8 +289,8 @@ class _ConductoresTabState extends State<ConductoresTab>
           const Spacer(),
           if (url != null)
             TextButton(
-              onPressed: () {},
-              child: const Text('VER', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: CabifyColors.primary)),
+              onPressed: () => launchUrl(Uri.parse(url)),
+              child: const Text('VER PDF', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: CabifyColors.primary)),
             )
           else
             const Text('FALTANTE', style: TextStyle(fontSize: 10, color: CabifyColors.error, fontWeight: FontWeight.bold)),

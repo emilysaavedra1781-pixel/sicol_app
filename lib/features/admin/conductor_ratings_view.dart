@@ -88,7 +88,6 @@ class _ConductorRatingsViewState extends State<ConductorRatingsView> {
         stream: _db
             .collection('calificaciones')
             .where('conductorUid', isEqualTo: widget.conductorUid)
-            .orderBy('fechaCreacion', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
@@ -115,6 +114,14 @@ class _ConductorRatingsViewState extends State<ConductorRatingsView> {
           }
 
           var allRatings = snapshot.data!.docs;
+
+          // Ordenar localmente por fecha descendente para evitar dependencia de índices compuestos
+          allRatings.sort((a, b) {
+            final fa = (a.data() as Map<String, dynamic>)['fechaCreacion'] as Timestamp?;
+            final fb = (b.data() as Map<String, dynamic>)['fechaCreacion'] as Timestamp?;
+            if (fa == null || fb == null) return 0;
+            return fb.compareTo(fa);
+          });
 
           // Aplicar filtro de fecha localmente si es necesario
           if (_fechaInicio != null && _fechaFin != null) {

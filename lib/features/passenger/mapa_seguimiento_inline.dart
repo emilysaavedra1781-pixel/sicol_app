@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import 'paraderos_constants.dart';
 import '../../../app_theme.dart';
 
 class MapaSeguimientoInline extends StatefulWidget {
   final String viajeId;
-  const MapaSeguimientoInline({super.key, required this.viajeId});
+  final String? targetParadero;
+  
+  const MapaSeguimientoInline({
+    super.key, 
+    required this.viajeId,
+    this.targetParadero,
+  });
 
   @override
   State<MapaSeguimientoInline> createState() => _MapaSeguimientoInlineState();
@@ -35,6 +43,24 @@ class _MapaSeguimientoInlineState extends State<MapaSeguimientoInline> {
     super.dispose();
   }
 
+  LatLng? _getParaderoCoords(String? nombre, String? ruta) {
+    if (nombre == null || ruta == null) return null;
+    final list = paraderosConCoordenadas[ruta];
+    if (list == null) return null;
+    try {
+      return list.firstWhere((p) => p.nombre == nombre).coordinates;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _calculateETA(double distanceMeters) {
+    // Estimación simple: 30km/h = 500m/min
+    if (distanceMeters < 100) return "Llegando...";
+    final minutes = (distanceMeters / 500).ceil();
+    return "Llega en aprox. $minutes min";
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
@@ -57,6 +83,18 @@ class _MapaSeguimientoInlineState extends State<MapaSeguimientoInline> {
             ? _rutaChosicaLima
             : _rutaChosicaLima.reversed.toList();
 
+        String etaText = "";
+        if (widget.targetParadero != null) {
+          final targetCoords = _getParaderoCoords(widget.targetParadero, ruta);
+          if (targetCoords != null) {
+            final distance = Geolocator.distanceBetween(
+              pos.latitude, pos.longitude,
+              targetCoords.latitude, targetCoords.longitude,
+            );
+            etaText = _calculateETA(distance);
+          }
+        }
+
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _ctrl?.animateCamera(CameraUpdate.newLatLng(pos));
         });
@@ -64,21 +102,29 @@ class _MapaSeguimientoInlineState extends State<MapaSeguimientoInline> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(children: [
+                    Icon(Icons.circle, color: Color(0xFF10B981), size: 8),
+                    SizedBox(width: 4),
+                    Text('Colectivo en vivo',
+                        style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.w600)),
+                  ]),
                 ),
-                child: const Row(children: [
-                  Icon(Icons.circle, color: Color(0xFF10B981), size: 8),
-                  SizedBox(width: 4),
-                  Text('Colectivo en vivo',
-                      style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.w600)),
-                ]),
-              ),
-            ]),
+                if (etaText.isNotEmpty)
+                  Text(
+                    etaText,
+                    style: const TextStyle(color: CabifyColors.primary, fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(12),

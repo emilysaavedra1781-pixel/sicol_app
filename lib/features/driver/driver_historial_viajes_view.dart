@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/trip_service.dart';
 import 'driver_drawer.dart';
+import 'driver_home_view.dart';
 import 'driver_viaje_detalle_view.dart';
 import '../../app_theme.dart';
 
@@ -28,7 +29,16 @@ class _DriverHistorialViajesViewState
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: CabifyColors.primary),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const DriverHomeView()),
+              );
+            }
+          },
         ),
         title: const Text('Mis viajes',
             style: TextStyle(

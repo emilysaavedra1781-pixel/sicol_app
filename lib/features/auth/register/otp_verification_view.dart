@@ -173,6 +173,9 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
           color: widget.userData['color'],
           fotoPerfil: widget.userData['fotoPerfil'],
           fotoVehiculo: widget.userData['fotoVehiculo'],
+          pdfDni: widget.userData['pdfDni'],
+          pdfLicencia: widget.userData['pdfLicencia'],
+          pdfTarjeta: widget.userData['pdfTarjeta'],
         );
       } else {
         await _authService.registerPasajero(
@@ -203,6 +206,16 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
       if (!mounted) return;
       
       final errorMsg = e.toString().toLowerCase();
+      
+      // Manejo específico de errores de Firebase Auth / Firestore en el registro
+      if (errorMsg.contains('email-already-in-use')) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'Este número de celular ya está registrado.';
+        });
+        return;
+      }
+
       if (errorMsg.contains('network') || errorMsg.contains('connection') || errorMsg.contains('failed host lookup')) {
         setState(() {
           _loading = false;
@@ -211,17 +224,26 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
         return;
       }
 
-      _intentosFallidos++;
-      setState(() {
-        _loading = false;
-        if (_intentosFallidos >= maxIntentos) {
-          _errorMessage = 'Superaste el límite de intentos. Solicita un nuevo código.';
-        } else {
-          _errorMessage = 'Código OTP incorrecto. Verifique el código recibido e inténtelo nuevamente.';
-        }
-        for (final c in _controllers) c.clear();
-      });
-      _focusNodes[0].requestFocus();
+      // Si llegamos aquí, evaluamos si es error de OTP o del registro
+      if (code != '123456' && errorMsg.contains('invalid-verification-code')) {
+        _intentosFallidos++;
+        setState(() {
+          _loading = false;
+          if (_intentosFallidos >= maxIntentos) {
+            _errorMessage = 'Superaste el límite de intentos. Solicita un nuevo código.';
+          } else {
+            _errorMessage = 'Código OTP incorrecto. Verifique el código recibido e inténtelo nuevamente.';
+          }
+          for (final c in _controllers) c.clear();
+        });
+        _focusNodes[0].requestFocus();
+      } else {
+        // Error genérico de registro (ej: permiso denegado, error de base de datos)
+        setState(() {
+          _loading = false;
+          _errorMessage = 'Error al crear la cuenta: ${e.toString().split(']').last.trim()}';
+        });
+      }
     }
   }
 

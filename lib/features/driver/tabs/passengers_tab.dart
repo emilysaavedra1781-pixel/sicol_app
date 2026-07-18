@@ -71,6 +71,15 @@ class PassengersTab extends StatelessWidget {
           );
         }
 
+        // Agrupar por reservaGroupId
+        final Map<String, List<DocumentSnapshot>> grupos = {};
+        for (var doc in docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final groupId = data['reservaGroupId'] ?? doc.id; // Fallback si no tiene groupId
+          if (!grupos.containsKey(groupId)) grupos[groupId] = [];
+          grupos[groupId]!.add(doc);
+        }
+
         return SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -84,16 +93,48 @@ class PassengersTab extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 24),
-              Column(
-                children: docs.map((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final asientoNum = (data['numeroAsiento'] as num?)?.toInt() ?? 0;
-                  
-                  // Necesitamos el DNI, que usualmente está en la colección 'usuarios'
-                  // Para CP01, mostraremos lo que tenemos en la reserva + fetch DNI if possible
-                  return _buildPassengerCard(context, data, asientoNum);
-                }).toList(),
-              ),
+              ...grupos.entries.map((entry) {
+                final grupoDocs = entry.value;
+                final bool esGrupo = grupoDocs.length > 1;
+
+                // Ordenar dentro del grupo: titular primero
+                grupoDocs.sort((a, b) {
+                  final dataA = a.data() as Map<String, dynamic>;
+                  final dataB = b.data() as Map<String, dynamic>;
+                  final bool titularA = dataA['esTitular'] ?? false;
+                  final bool titularB = dataB['esTitular'] ?? false;
+                  if (titularA && !titularB) return -1;
+                  if (!titularA && titularB) return 1;
+                  return 0;
+                });
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (esGrupo)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12, left: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.group_rounded, color: CabifyColors.primary, size: 18),
+                            const SizedBox(width: 8),
+                            Text('Grupo de ${grupoDocs.length} personas', 
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: CabifyColors.primary)),
+                          ],
+                        ),
+                      ),
+                    ...grupoDocs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final asientoNum = (data['numeroAsiento'] as num?)?.toInt() ?? 0;
+                      return Padding(
+                        padding: EdgeInsets.only(left: esGrupo ? 12 : 0),
+                        child: _buildPassengerCard(context, data, asientoNum),
+                      );
+                    }),
+                    if (esGrupo) const SizedBox(height: 16),
+                  ],
+                );
+              }),
             ],
           ),
         );
@@ -102,20 +143,21 @@ class PassengersTab extends StatelessWidget {
   }
 
   Widget _buildPassengerCard(BuildContext context, Map<String, dynamic> resData, int asiento) {
+    final bool esTitular = resData['esTitular'] ?? false;
+
     return FutureBuilder<DocumentSnapshot>(
       future: FirebaseFirestore.instance.collection('usuarios').doc(resData['pasajeroUid']).get(),
       builder: (context, userSnap) {
         final userData = userSnap.data?.data() as Map<String, dynamic>? ?? {};
-        final dni = userData['dni'] ?? '-'; // CP01: Incluir DNI
+        final dni = resData['dniViajero'] ?? userData['dni'] ?? '-'; // CP01: Priorizar DNI de la reserva
 
-        // Reutilizamos el estilo del passengerCard widget pero con datos extendidos
         return passengerCard(
           viajeId: viajeId,
           pasajero: {
-            'nombre': resData['nombreViajero'] ?? 'Pasajero',
+            'nombre': '${resData['nombreViajero'] ?? 'Pasajero'}${esTitular ? " (Titular)" : ""}',
             'asiento': asiento,
-            'paradero': resData['paradero'] ?? '-', // CP01: Punto de recojo
-            'dni': dni, // CP01: DNI
+            'paradero': resData['paradero'] ?? '-', 
+            'dni': dni,
           },
           enCamino: enCamino,
           onValidar: () => onValidar(resData, asiento),

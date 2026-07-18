@@ -1,0 +1,108 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Función auxiliar para verificar si el usuario es Admin
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // --- COLECCIÓN USUARIOS ---
+    match /usuarios/{userId} {
+      // Cualquier usuario autenticado puede leer perfiles básicos (nombres, fotos)
+      allow read: if request.auth != null;
+
+      // Un usuario solo puede escribir sus propios datos, pero NO campos críticos de aprobación
+      allow update: if request.auth != null && request.auth.uid == userId
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                        .hasAny(['rol', 'estado', 'bloqueado', 'verificado', 'codigoConductor']);
+
+      // Registro inicial (create) permitido si el UID coincide
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      // Admin tiene control total
+      allow write: if isAdmin();
+    }
+
+    // --- COLECCIÓN VIAJES ---
+    match /viajes/{viajeId} {
+      // Lectura pública para usuarios autenticados
+      allow read: if request.auth != null;
+
+      // Escritura restringida: conductores solo pueden actualizar ubicación y asientos.
+      // No pueden modificar ingresoTotal directamente (esto lo hace Cloud Functions).
+      allow update: if request.auth != null &&
+                    (resource.data.conductorUid == request.auth.uid || isAdmin())
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                        .hasAny(['ingresoTotal', 'iniciadoPorAdmin', 'adminId']);
+
+      // Creación permitida a conductores (vía App) o Admin
+      allow create: if request.auth != null &&
+                    (request.resource.data.conductorUid == request.auth.uid || isAdmin());
+
+      allow delete: if isAdmin();
+    }
+
+    // --- COLECCIÓN RESERVAS ---
+    match /reservas/{reservaId} {
+      // Dueño de la reserva, conductor del viaje o admin pueden leer
+      allow read: if request.auth != null &&
+                  (request.auth.uid == resource.data.pasajeroUid ||
+                   get(/databases/$(database)/documents/viajes/$(resource.data.viajeId)).data.conductorUid == request.auth.uid ||
+                   isAdmin());
+
+      // Solo el pasajero puede actualizar ciertos campos (como confirmar bajada o cambiar paradero)
+      // Pero no puede modificar el monto o el estado de pago.
+      // Restricción adicional: Solo puede cancelar (pasar a 'cancelada') si el estado actual es 'confirmada'.
+      allow update: if request.auth != null &&
+                    (request.auth.uid == resource.data.pasajeroUid || isAdmin())
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                        .hasAny(['monto', 'reservaGroupId', 'viajeId', 'pasajeroUid'])
+                    && (
+                      request.resource.data.estado != 'cancelada' ||
+                      resource.data.estado == 'confirmada' ||
+                      isAdmin()
+                    );
+
+      // Permitir al pasajero borrar su propia reserva solo si está bloqueada (cancelación durante checkout)
+      allow delete: if request.auth != null &&
+                    (resource.data.pasajeroUid == request.auth.uid && resource.data.estado == 'bloqueada') ||
+                    isAdmin();
+
+      // Escritura total reservada para Cloud Functions (Admin SDK) o Admin
+      allow write: if isAdmin();
+    }
+
+    // --- COLECCIÓN PARADEROS ---
+    match /paraderos/{paraderoId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // --- COLECCIÓN INCIDENCIAS ---
+    match /incidencias/{incidenciaId} {
+      // Dueño o Admin pueden leer
+      allow read: if request.auth != null &&
+                  (request.auth.uid == resource.data.usuarioId || isAdmin());
+
+      // Creación permitida para reportar problemas
+      allow create: if request.auth != null && request.resource.data.usuarioId == request.auth.uid;
+
+      allow update, delete: if isAdmin();
+    }
+
+    // --- COLECCIÓN ADMINS (Solo lectura interna de la función isAdmin) ---
+    match /admins/{adminId} {
+      allow read: if request.auth != null && request.auth.uid == adminId;
+      allow write: if false; // Solo vía Consola/Script seguro
+    }
+
+    // --- COLECCIÓN CALIFICACIONES ---
+    match /calificaciones/{calificacionId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.pasajeroUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+  }
+}

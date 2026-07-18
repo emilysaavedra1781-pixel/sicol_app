@@ -16,20 +16,11 @@ class DriverDrawer extends StatelessWidget {
   void _ir(BuildContext context, String route, Widget destino) {
     Navigator.pop(context);
     if (route == currentRoute) return;
-    
-    // Si estamos navegando desde el Home, usamos push para permitir volver con el botón atrás.
-    // Si ya estamos en una sub-pantalla, reemplazamos para no acumular stack.
-    if (currentRoute == 'home') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => destino),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => destino),
-      );
-    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => destino),
+    );
   }
 
   Future<void> _abrirReportarIncidencia(BuildContext context) async {

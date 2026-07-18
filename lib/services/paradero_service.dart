@@ -4,7 +4,10 @@ import '../models/paradero_model.dart';
 /// DAO — Centraliza el acceso a la colección 'paraderos' en Firestore.
 /// Ninguna otra clase realiza consultas directamente a esta colección.
 class ParaderoService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseFirestore _db;
+
+  ParaderoService({FirebaseFirestore? db})
+      : _db = db ?? FirebaseFirestore.instance;
 
   // ─── Paraderos hardcodeados como fallback sin internet ─────────────────────
   static final List<ParaderoModel> _fallback = [

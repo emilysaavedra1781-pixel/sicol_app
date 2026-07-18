@@ -137,52 +137,53 @@ class TripService {
     required double lat,
     required double lng,
   }) async {
-    final batch = _db.batch();
     final viajeRef = _db.collection('viajes').doc(viajeId);
     final conductorRef = _db.collection('usuarios').doc(_uid);
 
-    // 1. Obtener datos del viaje para liberar asientos (CP04)
-    final vSnap = await viajeRef.get();
-    final vData = vSnap.data() as Map<String, dynamic>;
-    final capacidad = (vData['capacidad'] as num?)?.toInt() ?? 4;
-    
-    final asientosLiberados = <String, dynamic>{};
-    for (int i = 1; i <= capacidad; i++) {
-      asientosLiberados['asiento_$i'] = {
-        'numero': i,
-        'estado': 'libre',
-        'pasajero': null,
-      };
-    }
+    await _db.runTransaction((tx) async {
+      final vSnap = await tx.get(viajeRef);
+      if (!vSnap.exists) return;
+      final vData = vSnap.data() as Map<String, dynamic>;
+      
+      double ingresoAjustado = (vData['ingresoTotal'] as num?)?.toDouble() ?? 0;
 
-    // 2. Finalizar viaje (sin limpiar asientos para conservar historial)
-    batch.update(viajeRef, {
-      'estado': 'finalizado',
-      'cerradoEn': FieldValue.serverTimestamp(),
+      // Buscar reservas activas para este viaje
+      final reservasSnap = await _db.collection('reservas')
+          .where('viajeId', isEqualTo: viajeId)
+          .where('estado', whereIn: ['confirmada', 'abordado'])
+          .get();
+      
+      for (var doc in reservasSnap.docs) {
+        final rData = doc.data();
+        if (rData['estado'] == 'confirmada') {
+          // El pasajero nunca subió -> NO SHOW
+          tx.update(doc.reference, {'estado': 'no_show'});
+          // Restar del ingreso del conductor
+          ingresoAjustado -= (rData['monto'] as num?)?.toDouble() ?? 15.0;
+        } else {
+          // El pasajero estaba a bordo -> FINALIZADA
+          tx.update(doc.reference, {'estado': 'finalizada'});
+        }
+      }
+
+      // 2. Finalizar viaje
+      tx.update(viajeRef, {
+        'estado': 'finalizado',
+        'cerradoEn': FieldValue.serverTimestamp(),
+        'ingresoTotal': ingresoAjustado < 0 ? 0 : ingresoAjustado,
+      });
+
+      // 3. Actualizar disponibilidad del conductor (CP06)
+      tx.update(conductorRef, {
+        'ubicacion_actual': {
+          'lat': lat,
+          'lng': lng,
+          'timestamp': FieldValue.serverTimestamp(),
+        },
+        'disponible': true,
+        'viajeActivoId': null,
+      });
     });
-
-    // 3. Actualizar disponibilidad del conductor (CP06)
-    batch.update(conductorRef, {
-      'ubicacion_actual': {
-        'lat': lat,
-        'lng': lng,
-        'timestamp': FieldValue.serverTimestamp(),
-      },
-      'disponible': true,
-      'viajeActivoId': null,
-    });
-
-    // 4. Marcar reservas como finalizadas para que los pasajeros puedan calificar
-    final reservasSnap = await _db.collection('reservas')
-        .where('viajeId', isEqualTo: viajeId)
-        .where('estado', whereIn: ['confirmada', 'abordado'])
-        .get();
-    
-    for (var doc in reservasSnap.docs) {
-      batch.update(doc.reference, {'estado': 'finalizada'});
-    }
-
-    await batch.commit();
   }
 
   // ─── Stream de un viaje específico ───────────────────────────────────────

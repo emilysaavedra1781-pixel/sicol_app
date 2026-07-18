@@ -16,16 +16,14 @@ class ForgotPasswordView extends StatefulWidget {
 
 class _ForgotPasswordViewState extends State<ForgotPasswordView> {
   final _formKey = GlobalKey<FormState>();
-  final _celularCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _authService = AuthService();
 
-  String _paso = 'celular';
+  String _paso = 'email';
   bool _loading = false;
   String? _errorMessage;
 
   // ── OTP en memoria (RF03 / RF46) ──────────────────────────────────────────
-  String? _otpEnMemoria;
-  DateTime? _expiracionOtp;
   Timer? _timerOtp;
   int _segundosRestantes = 0;
 
@@ -38,12 +36,12 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
   final _pass2Ctrl = TextEditingController();
   bool _obscurePass = true;
   bool _obscurePass2 = true;
-  Map<String, dynamic>? _userData;
+  String? _capturedUid;
 
   @override
   void dispose() {
     _timerOtp?.cancel();
-    _celularCtrl.dispose();
+    _emailCtrl.dispose();
     _passCtrl.dispose();
     _pass2Ctrl.dispose();
     for (final c in _otpControllers) c.dispose();
@@ -53,7 +51,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
 
   void _startTimer() {
     _timerOtp?.cancel();
-    _segundosRestantes = 120; // 2 minutos
+    _segundosRestantes = 60; // 60 segundos reales
     _timerOtp = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_segundosRestantes > 0) {
         if (mounted) setState(() => _segundosRestantes--);
@@ -63,18 +61,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     });
   }
 
-  String _generarCodigoRandom() {
-    final rnd = Random();
-    return (100000 + rnd.nextInt(900000)).toString();
-  }
-
-  void _autocompletarOtp(String code) {
-    for (int i = 0; i < 6; i++) {
-      _otpControllers[i].text = code[i];
-    }
-  }
-
-  // ─── PASO 1: Verificar celular y enviar OTP ───────────────────────────────
+  // ─── PASO 1: Enviar OTP Real via Cloud Function ───────────────────────────
 
   Future<void> _enviarOtp() async {
     if (!_formKey.currentState!.validate()) return;
@@ -85,89 +72,79 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     });
 
     try {
-      final celular = _celularCtrl.text.trim();
-      final snap = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .where('celular', isEqualTo: celular)
-          .limit(1)
-          .get();
+      final email = _emailCtrl.text.trim();
+      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('solicitarOtpRecuperacion');
+      
+      await callable.call({'email': email});
 
       if (!mounted) return;
-
-      if (snap.docs.isEmpty) {
-        setState(() {
-          _loading = false;
-          // CP02: Mensaje de celular no registrado
-          _errorMessage = 'Este número no está registrado en el sistema.';
-        });
-        return;
-      }
-
-      _userData = snap.docs.first.data();
-      _userData!['id'] = snap.docs.first.id;
-
-      // Generar OTP en memoria para todos (Passenger y Conductor)
-      _otpEnMemoria = _generarCodigoRandom();
-      _expiracionOtp = DateTime.now().add(const Duration(minutes: 2));
-      
       setState(() {
         _loading = false;
         _paso = 'otp';
-        _autocompletarOtp(_otpEnMemoria!); // CP01: Autocompletar
+        for (var c in _otpControllers) c.clear();
         _startTimer();
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Código enviado por SMS (Simulado)')),
+        const SnackBar(content: Text('Código enviado a tu correo electrónico.')),
       );
     } catch (e) {
-      // CP05: Error de conexión
       if (mounted) {
         setState(() {
           _loading = false;
-          _errorMessage = 'No se pudo conectar. Verifica tu conexión a internet e inténtalo de nuevo.';
+          _errorMessage = e.toString().replaceAll("Exception: ", "").replaceAll("FirebaseFunctionsException: ", "");
+          if (_errorMessage!.contains("not-found")) _errorMessage = "El correo no está registrado.";
+          if (_errorMessage!.contains("resource-exhausted")) _errorMessage = "Espera un minuto para reenviar.";
         });
       }
     }
   }
 
-  // ─── PASO 2: Verificar OTP ────────────────────────────────────────────────
+  // ─── PASO 2: Verificar OTP Real ───────────────────────────────────────────
 
   Future<void> _verificarOtp() async {
     final code = _otpControllers.map((c) => c.text.trim()).join();
     if (code.length != 6) return;
 
-    // CP04: Verificar expiración
     if (_segundosRestantes == 0) {
-      setState(() {
-        _errorMessage = 'El código OTP ha expirado. Solicita un nuevo código.';
-      });
+      setState(() => _errorMessage = 'El código ha expirado. Solicita uno nuevo.');
       return;
     }
 
-    // CP03: Verificar corrección
-    if (code != _otpEnMemoria) {
-      setState(() {
-        _errorMessage = 'Código incorrecto. Verifique el código e inténtelo nuevamente.';
-      });
-      return;
-    }
+    setState(() => _loading = true);
 
-    setState(() {
-      _paso = 'password';
-      _errorMessage = null;
-    });
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('verificarOtpRecuperacion');
+      
+      final result = await callable.call({
+        'email': _emailCtrl.text.trim(),
+        'otp': code,
+      });
+
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _capturedUid = result.data['uid'];
+        _paso = 'password';
+        _errorMessage = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _errorMessage = "Código incorrecto o expirado.";
+        });
+      }
+    }
   }
 
-  // ─── PASO 3: Cambiar contraseña ───────────────────────────────────────────
+  // ─── PASO 3: Cambiar contraseña con Admin SDK (vía Function segura) ──────
 
   Future<void> _cambiarPassword() async {
-    if (_passCtrl.text.isEmpty) {
-      setState(() => _errorMessage = 'Ingresa una contraseña.');
-      return;
-    }
     if (_passCtrl.text.length < 6) {
-      setState(() => _errorMessage = 'La contraseña debe tener mínimo 6 caracteres.');
+      setState(() => _errorMessage = 'Mínimo 6 caracteres.');
       return;
     }
     if (_passCtrl.text != _pass2Ctrl.text) {
@@ -181,16 +158,13 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     });
 
     try {
-      final uid = _userData!['id'];
-      final callable = FirebaseFunctions.instanceFor(region: 'us-central1').httpsCallable('changePassword');
+      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('changePasswordSecure');
 
       await callable.call({
-        'uid': uid,
+        'uid': _capturedUid,
         'newPassword': _passCtrl.text,
       });
-
-      // Desbloqueo automático y reset intentos (RF40 / RF03)
-      await _authService.desbloquearCuentaPorCelular(_celularCtrl.text.trim());
 
       if (!mounted) return;
       setState(() {
@@ -201,7 +175,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _errorMessage = 'No se pudo conectar. Verifica tu conexión a internet e inténtalo de nuevo.';
+          _errorMessage = 'No se pudo actualizar la contraseña. Reintenta.';
         });
       }
     }
@@ -219,7 +193,11 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
               elevation: 0,
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back, color: CabifyColors.primary),
-                onPressed: () => _paso == 'otp' ? setState(() => _paso = 'celular') : Navigator.pop(context),
+                onPressed: () {
+                  if (_paso == 'otp') setState(() => _paso = 'email');
+                  else if (_paso == 'password') setState(() => _paso = 'otp');
+                  else Navigator.pop(context);
+                },
               ),
               title: const Text('Recuperar contraseña',
                   style: TextStyle(color: CabifyColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
@@ -236,33 +214,32 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
 
   Widget _buildPaso() {
     switch (_paso) {
-      case 'celular': return _buildCelularStep();
+      case 'email': return _buildEmailStep();
       case 'otp': return _buildOtpStep();
       case 'password': return _buildPasswordStep();
       case 'exito': return _buildExitoStep();
-      default: return _buildCelularStep();
+      default: return _buildEmailStep();
     }
   }
 
-  Widget _buildCelularStep() {
+  Widget _buildEmailStep() {
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Ingresa tu número de celular para recibir un código de verificación.',
+          const Text('Ingresa tu correo electrónico registrado para recibir un código de verificación.',
               style: TextStyle(color: CabifyColors.textSecondary, fontSize: 14, height: 1.5)),
           const SizedBox(height: 32),
           if (_errorMessage != null) ...[ _errorBanner(_errorMessage!), const SizedBox(height: 20) ],
-          const Text('Número de celular', style: TextStyle(color: CabifyColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
+          const Text('Correo electrónico', style: TextStyle(color: CabifyColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           TextFormField(
-            controller: _celularCtrl,
-            keyboardType: TextInputType.phone,
+            controller: _emailCtrl,
+            keyboardType: TextInputType.emailAddress,
             style: const TextStyle(color: CabifyColors.textPrimary, fontSize: 15),
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            validator: (v) => (v == null || v.isEmpty) ? 'Ingresa tu celular' : (v.length != 9 ? '9 dígitos requeridos' : null),
-            decoration: _inputDecoration(hint: '9XXXXXXXX', icon: Icons.phone_outlined, prefix: const Padding(padding: EdgeInsets.only(left: 12, right: 4), child: Text('+51 ', style: TextStyle(color: CabifyColors.textPrimary, fontSize: 14)))),
+            validator: (v) => (v == null || !v.contains('@')) ? 'Email inválido' : null,
+            decoration: _inputDecoration(hint: 'usuario@email.com', icon: Icons.email_outlined),
           ),
           const SizedBox(height: 32),
           _botonPrincipal(texto: 'Continuar', onPressed: _loading ? null : _enviarOtp, loading: _loading),
@@ -276,7 +253,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(expirado ? 'El código ha expirado. Solicita uno nuevo.' : 'Ingresa el código de verificación enviado por SMS.',
+        Text(expirado ? 'El código ha expirado. Solicita uno nuevo.' : 'Ingresa el código de 6 dígitos enviado a tu correo electrónico.',
             style: const TextStyle(color: CabifyColors.textSecondary, fontSize: 14, height: 1.5)),
         const SizedBox(height: 32),
         if (_errorMessage != null) ...[ _errorBanner(_errorMessage!), const SizedBox(height: 20) ],
@@ -314,8 +291,8 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         Center(child: Text('${(_segundosRestantes ~/ 60).toString().padLeft(2, '0')}:${(_segundosRestantes % 60).toString().padLeft(2, '0')}', style: TextStyle(color: expirado ? CabifyColors.error : CabifyColors.textSecondary, fontSize: 16, fontWeight: FontWeight.bold))),
         const SizedBox(height: 32),
         expirado 
-          ? _botonSecundario(texto: 'Reenviar OTP', onPressed: _enviarOtp)
-          : _botonPrincipal(texto: 'Verificar', onPressed: _loading ? null : _verificarOtp, loading: _loading),
+          ? _botonSecundario(texto: 'Reenviar código', onPressed: _enviarOtp)
+          : _botonPrincipal(texto: 'Verificar código', onPressed: _loading ? null : _verificarOtp, loading: _loading),
       ],
     );
   }
@@ -324,7 +301,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Crea tu nueva contraseña.', style: TextStyle(color: CabifyColors.textSecondary, fontSize: 14, height: 1.5)),
+        const Text('Crea tu nueva contraseña de acceso.', style: TextStyle(color: CabifyColors.textSecondary, fontSize: 14, height: 1.5)),
         const SizedBox(height: 32),
         if (_errorMessage != null) ...[ _errorBanner(_errorMessage!), const SizedBox(height: 20) ],
         const Text('Nueva contraseña', style: TextStyle(color: CabifyColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
@@ -347,9 +324,9 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         const SizedBox(height: 40),
         Container(width: 80, height: 80, decoration: BoxDecoration(color: CabifyColors.success.withValues(alpha: 0.12), shape: BoxShape.circle), child: const Icon(Icons.check_circle_outline, color: CabifyColors.success, size: 40)),
         const SizedBox(height: 24),
-        const Text('¡Contraseña actualizada correctamente!', style: TextStyle(color: CabifyColors.textPrimary, fontSize: 22, fontWeight: FontWeight.w700)),
+        const Text('¡Proceso exitoso!', style: TextStyle(color: CabifyColors.textPrimary, fontSize: 22, fontWeight: FontWeight.w700)),
         const SizedBox(height: 12),
-        const Text('Tu contraseña fue cambiada exitosamente.\nTu cuenta ha sido desbloqueada.', textAlign: TextAlign.center, style: TextStyle(color: CabifyColors.textSecondary, fontSize: 14, height: 1.6)),
+        const Text('Tu contraseña ha sido actualizada y tu cuenta está lista para usar.', textAlign: TextAlign.center, style: TextStyle(color: CabifyColors.textSecondary, fontSize: 14, height: 1.6)),
         const SizedBox(height: 40),
         _botonPrincipal(texto: 'Volver al inicio de sesión', onPressed: () => Navigator.pop(context), loading: false),
       ],

@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import 'paraderos_constants.dart';
 import '../../app_theme.dart';
 
 class MapaSeguimientoWidget extends StatefulWidget {
   final String viajeId;
-  const MapaSeguimientoWidget({super.key, required this.viajeId});
+  final String? targetParadero;
+
+  const MapaSeguimientoWidget({
+    super.key, 
+    required this.viajeId,
+    this.targetParadero,
+  });
 
   @override
   State<MapaSeguimientoWidget> createState() => _MapaSeguimientoWidgetState();
@@ -35,6 +43,23 @@ class _MapaSeguimientoWidgetState extends State<MapaSeguimientoWidget> {
     super.dispose();
   }
 
+  LatLng? _getParaderoCoords(String? nombre, String? ruta) {
+    if (nombre == null || ruta == null) return null;
+    final list = paraderosConCoordenadas[ruta];
+    if (list == null) return null;
+    try {
+      return list.firstWhere((p) => p.nombre == nombre).coordinates;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _calculateETA(double distanceMeters) {
+    if (distanceMeters < 100) return "Llegando...";
+    final minutes = (distanceMeters / 500).ceil();
+    return "Llega en aprox. $minutes min";
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
@@ -55,6 +80,18 @@ class _MapaSeguimientoWidgetState extends State<MapaSeguimientoWidget> {
         final rutaPuntos = ruta == 'chosica_lima'
             ? _rutaChosicaLima
             : _rutaChosicaLima.reversed.toList();
+
+        String etaText = "";
+        if (widget.targetParadero != null) {
+          final targetCoords = _getParaderoCoords(widget.targetParadero, ruta);
+          if (targetCoords != null) {
+            final distance = Geolocator.distanceBetween(
+              posActual.latitude, posActual.longitude,
+              targetCoords.latitude, targetCoords.longitude,
+            );
+            etaText = _calculateETA(distance);
+          }
+        }
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _mapController?.animateCamera(CameraUpdate.newLatLng(posActual));
@@ -84,6 +121,14 @@ class _MapaSeguimientoWidgetState extends State<MapaSeguimientoWidget> {
                             fontSize: 15,
                             fontWeight: FontWeight.w700)),
                   ),
+                  if (etaText.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: Text(
+                        etaText,
+                        style: const TextStyle(color: CabifyColors.primary, fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(

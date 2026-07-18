@@ -3,8 +3,239 @@ const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
 const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
+const nodemailer = require("nodemailer");
 
 admin.initializeApp();
+
+// Configuración de Email (Recomendado: SendGrid o Gmail con App Password)
+// Debes configurar estas variables en Firebase con:
+// firebase functions:secrets:set SMTP_USER
+// firebase functions:secrets:set SMTP_PASS
+const mailTransport = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+// URLs de retorno (páginas puente en Firebase Hosting que redirigen al deep link sicolapp://)
+const BACK_URLS = {
+  success: "https://jupiter-da0d7.web.app/payment-success.html",
+  failure: "https://jupiter-da0d7.web.app/payment-error.html",
+  pending: "https://jupiter-da0d7.web.app/payment-pending.html"
+};
+
+// ── Recuperación de Contraseña con OTP Real (Email) ───────────────────────────
+
+exports.solicitarOtpRecuperacion = onCall(
+  {
+    region: "us-central1",
+    secrets: ["SMTP_USER", "SMTP_PASS"],
+  },
+  async (request) => {
+    const { email } = request.data;
+    if (!email) throw new HttpsError("invalid-argument", "El email es requerido.");
+
+    try {
+      const db = admin.firestore();
+
+      // 1. Buscar el celular asociado al email en Firestore
+      const userQuery = await db.collection("usuarios")
+        .where("email", "==", email)
+        .limit(1)
+        .get();
+
+      if (userQuery.empty) {
+        throw new HttpsError("not-found", "No existe una cuenta con este correo.");
+      }
+
+      const userData = userQuery.docs[0].data();
+      const celular = userData.celular;
+      if (!celular) throw new HttpsError("internal", "Error de consistencia: usuario sin celular.");
+
+      const emailAuth = `${celular}@sicol.pe`;
+      const user = await admin.auth().getUserByEmail(emailAuth);
+      const uid = user.uid;
+
+      // Rate limit: 1 solicitud cada 60 segundos
+      const otpRef = db.collection("otp_recuperacion").doc(uid);
+      const doc = await otpRef.get();
+
+      if (doc.exists) {
+        const lastSent = doc.data().creadoEn.toDate();
+        const diff = (new Date() - lastSent) / 1000;
+        if (diff < 60) {
+          throw new HttpsError("resource-exhausted", `Espera ${Math.ceil(60 - diff)}s para reenviar.`);
+        }
+      }
+
+      // Generar código de 6 dígitos
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+      await otpRef.set({
+        otp,
+        intentos: 0,
+        creadoEn: admin.firestore.FieldValue.serverTimestamp(),
+        email: email
+      });
+
+      // Enviar Email
+      const mailOptions = {
+        from: '"SICOL Soporte" <no-reply@sicol.pe>',
+        to: email,
+        subject: `${otp} es tu código de recuperación de SICOL`,
+        text: `Tu código de verificación es: ${otp}. Válido por 60 segundos.`,
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              .container { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden; }
+              .header { background-color: #6B21F5; padding: 32px; text-align: center; }
+              .content { padding: 40px; background-color: #ffffff; text-align: center; }
+              .otp-box { background-color: #f3f4f6; padding: 24px; font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #6B21F5; border-radius: 12px; margin: 24px 0; border: 2px dashed #6B21F5; }
+              .footer { padding: 24px; background-color: #f9fafb; color: #6b7280; font-size: 12px; text-align: center; }
+              .logo-text { color: #ffffff; font-size: 28px; font-weight: bold; letter-spacing: 2px; margin: 0; }
+              .h1 { color: #111827; font-size: 20px; font-weight: 700; margin-bottom: 16px; }
+              .p { color: #4b5563; font-size: 15px; line-height: 1.6; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <p class="logo-text">SICOL</p>
+              </div>
+              <div class="content">
+                <h1 class="h1">Restablecer contraseña</h1>
+                <p class="p">Hola,</p>
+                <p class="p">Has solicitado un código para cambiar tu contraseña en la aplicación SICOL. Utiliza el siguiente código de verificación:</p>
+                <div class="otp-box">${otp}</div>
+                <p class="p">Este código es válido por solo <b>60 segundos</b> por razones de seguridad.</p>
+                <p class="p" style="margin-top: 32px; font-size: 13px;">Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
+              </div>
+              <div class="footer">
+                &copy; 2026 SICOL - Sistema de Colectivos. Todos los derechos reservados.<br>
+                Este es un mensaje automático, por favor no respondas a este correo.
+              </div>
+            </div>
+          </body>
+          </html>
+        `
+      };
+
+      await mailTransport.sendMail(mailOptions);
+      return { success: true };
+
+    } catch (error) {
+      console.error("Error en solicitarOtpRecuperacion:", error);
+      if (error.code === "auth/user-not-found") {
+        throw new HttpsError("not-found", "No existe una cuenta con este correo.");
+      }
+      throw new HttpsError("internal", error.message);
+    }
+  }
+);
+
+exports.verificarOtpRecuperacion = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const { email, otp } = request.data;
+    if (!email || !otp) throw new HttpsError("invalid-argument", "Datos incompletos.");
+
+    try {
+      const db = admin.firestore();
+
+      // 1. Buscar el celular asociado al email en Firestore
+      const userQuery = await db.collection("usuarios")
+        .where("email", "==", email)
+        .limit(1)
+        .get();
+
+      if (userQuery.empty) {
+        throw new HttpsError("not-found", "No existe una cuenta con este correo.");
+      }
+
+      const userData = userQuery.docs[0].data();
+      const emailAuth = `${userData.celular}@sicol.pe`;
+
+      const user = await admin.auth().getUserByEmail(emailAuth);
+      const uid = user.uid;
+      const otpRef = db.collection("otp_recuperacion").doc(uid);
+      const doc = await otpRef.get();
+
+      if (!doc.exists) throw new HttpsError("not-found", "Código no solicitado o ya usado.");
+
+      const data = doc.data();
+
+      // Seguridad: Límite de 3 intentos
+      if (data.intentos >= 3) {
+        await otpRef.delete();
+        throw new HttpsError("permission-denied", "Demasiados intentos fallidos. Solicita un nuevo código.");
+      }
+
+      // Validación de tiempo: 60 segundos
+      const diff = (new Date() - data.creadoEn.toDate()) / 1000;
+      if (diff > 60) {
+        await otpRef.delete();
+        throw new HttpsError("deadline-exceeded", "El código ha expirado.");
+      }
+
+      if (data.otp !== otp) {
+        await otpRef.update({ intentos: admin.firestore.FieldValue.increment(1) });
+        throw new HttpsError("invalid-argument", "Código incorrecto.");
+      }
+
+      // Éxito: Marcar como verificado (guardamos un flag temporal o simplemente retornamos success)
+      // Para mayor seguridad, podríamos generar un "token de reset" corto.
+      await otpRef.update({ verificado: true });
+      return { success: true, uid: uid };
+
+    } catch (error) {
+      console.error("Error en verificarOtpRecuperacion:", error);
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("internal", error.message);
+    }
+  }
+);
+
+exports.changePasswordSecure = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const { uid, newPassword } = request.data;
+    if (!uid || !newPassword || newPassword.length < 6) {
+      throw new HttpsError("invalid-argument", "Datos inválidos.");
+    }
+
+    try {
+      const db = admin.firestore();
+      const otpRef = db.collection("otp_recuperacion").doc(uid);
+      const doc = await otpRef.get();
+
+      if (!doc.exists || !doc.data().verificado) {
+        throw new HttpsError("permission-denied", "Debes verificar el OTP primero.");
+      }
+
+      // Cambio real de contraseña
+      await admin.auth().updateUser(uid, { password: newPassword });
+
+      // Desbloqueo de cuenta en Firestore (si aplica)
+      const userRef = db.collection("usuarios").doc(uid);
+      await userRef.update({
+        estado: "activo",
+        bloqueado: false,
+        intentosFallidos: 0
+      }).catch(() => {}); // Ignorar si el doc no existe o no tiene esos campos (ej. admin)
+
+      // Limpiar rastro
+      await otpRef.delete();
+
+      return { success: true };
+    } catch (error) {
+      throw new HttpsError("internal", error.message);
+    }
+  }
+);
 
 // ── Mercado Pago ─────────────────────────────────────────────────────────────
 
@@ -65,7 +296,7 @@ exports.bloquearYCrearPreferencia = onCall(
       // 2. Crear registros de reserva temporal (CP01, CP02)
       const reservaGroupId = db.collection("reservas").doc().id;
 
-      const promesas = viajeros.map(v => {
+      const promesas = viajeros.map((v, index) => {
         return db.collection("reservas").add({
           viajeId,
           pasajeroUid: pasajeroId,
@@ -76,6 +307,7 @@ exports.bloquearYCrearPreferencia = onCall(
           estado: 'bloqueada',
           monto: 15,
           reservaGroupId,
+          esTitular: index === 0, // El primero del array es el titular
           creadoEn: admin.firestore.FieldValue.serverTimestamp(),
           expira_en: admin.firestore.Timestamp.fromDate(expiraEn),
           notificado_8min: false
@@ -84,11 +316,8 @@ exports.bloquearYCrearPreferencia = onCall(
 
       await Promise.all(promesas);
 
-      // 3. Configurar Mercado Pago
-      const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN });
-      const preference = new Preference(client);
-
-      const body = {
+      // 3. Configurar Mercado Pago — DIAGNÓSTICO TEMPORAL con fetch directo
+      const bodyMp = {
         items: [
           {
             id: `reserva_${reservaGroupId}`,
@@ -99,24 +328,41 @@ exports.bloquearYCrearPreferencia = onCall(
           }
         ],
         payer: { email: email || "pasajero_sicol@test.com" },
-        marketplace_fee: 5.00 * asientos.length,
-        notification_url: "https://us-central1-sicol-app.cloudfunctions.net/webhookMercadoPago",
+        notification_url: "https://us-central1-jupiter-da0d7.cloudfunctions.net/webhookMercadoPago",
         external_reference: JSON.stringify({
           reservaGroupId,
           viajeId,
           pasajeroId,
           paradero
         }),
-        back_urls: {
-          success: "sicolapp://payment-success",
-          failure: "sicolapp://payment-error",
-          pending: "sicolapp://payment-pending"
-        },
-        auto_return: "approved",
-        collector_id: 3502535930
+        back_urls: BACK_URLS,
+        auto_return: "approved"
       };
 
-      const response = await preference.create({ body });
+      const mpRawResponse = await fetch("https://api.mercadopago.com/checkout/preferences", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.MP_ACCESS_TOKEN}`
+        },
+        body: JSON.stringify(bodyMp)
+      });
+
+      const rawText = await mpRawResponse.text();
+      console.error("MP STATUS:", mpRawResponse.status);
+      console.error("MP RAW BODY:", rawText);
+      console.error("MP TOKEN PREFIX:", (process.env.MP_ACCESS_TOKEN || "").substring(0, 8));
+
+      let response;
+      try {
+        response = JSON.parse(rawText);
+      } catch (e) {
+        throw new HttpsError("internal", `MP devolvió una respuesta no-JSON. Status: ${mpRawResponse.status}. Body: ${rawText.substring(0, 200)}`);
+      }
+
+      if (!mpRawResponse.ok) {
+        throw new HttpsError("internal", `Error de Mercado Pago (${mpRawResponse.status}): ${response.message || JSON.stringify(response)}`);
+      }
 
       return {
         init_point: response.init_point,
@@ -126,6 +372,7 @@ exports.bloquearYCrearPreferencia = onCall(
 
     } catch (error) {
       console.error("ERROR bloquearYCrearPreferencia:", error);
+      if (error instanceof HttpsError) throw error;
       throw new HttpsError("internal", error.message);
     }
   }
@@ -208,8 +455,7 @@ exports.crearPreferenciaPago = onCall(
         payer: {
           email: email || "pasajero_sicol@test.com"
         },
-        marketplace_fee: 5.00,
-        notification_url: "https://us-central1-sicol-app.cloudfunctions.net/webhookMercadoPago",
+        notification_url: "https://us-central1-jupiter-da0d7.cloudfunctions.net/webhookMercadoPago",
         external_reference: JSON.stringify({
           viajeId,
           pasajeroId,
@@ -217,25 +463,26 @@ exports.crearPreferenciaPago = onCall(
           paradero,
           nombrePasajero: nombrePasajero || "Pasajero"
         }),
-        back_urls: {
-          success: "sicolapp://payment-success",
-          failure: "sicolapp://payment-error",
-          pending: "sicolapp://payment-pending"
-        },
-        auto_return: "approved",
-        collector_id: 3502535930
+        back_urls: BACK_URLS,
+        auto_return: "approved"
       };
 
-      const response = await preference.create({ body });
+      let response;
+      try {
+        response = await preference.create({ body });
+      } catch (mpError) {
+        console.error("ERROR Mercado Pago (crearPreferenciaPago):", JSON.stringify(mpError, null, 2));
+        throw new HttpsError("internal", "No se pudo crear la preferencia de pago. Intenta nuevamente.");
+      }
 
       return {
         init_point: response.init_point,
-        preference_id: response.id,
-        reservaGroupId: reservaGroupId // Añadido para RF08
+        preference_id: response.id
       };
 
     } catch (error) {
       console.error("ERROR crearPreferenciaPago:", error);
+      if (error instanceof HttpsError) throw error;
       throw new HttpsError("internal", error.message);
     }
   }
@@ -1066,3 +1313,171 @@ function getDistance(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+
+exports.abandonarViajesHuerfanos = onSchedule("every 1 hours", async (event) => {
+  const db = admin.firestore();
+  const threshold = new Date();
+  threshold.setHours(threshold.getHours() - 8);
+
+  try {
+    const viajesHuerfanos = await db.collection("viajes")
+      .where("estado", "in", ["activo", "en_camino"])
+      .where("iniciadoEn", "<=", admin.firestore.Timestamp.fromDate(threshold))
+      .get();
+
+    if (viajesHuerfanos.empty) return;
+
+    const batch = db.batch();
+    for (const vDoc of viajesHuerfanos.docs) {
+      const data = vDoc.data();
+      batch.update(vDoc.ref, {
+        estado: "abandonado",
+        abandonadoEn: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Liberar al conductor
+      if (data.conductorUid) {
+        batch.update(db.collection("usuarios").doc(data.conductorUid), {
+          disponible: true,
+          viajeActivoId: null
+        });
+      }
+    }
+
+    await batch.commit();
+    console.log(`✅ ${viajesHuerfanos.size} viajes marcados como abandonados.`);
+  } catch (e) {
+    console.error("Error en abandonarViajesHuerfanos:", e);
+  }
+});
+
+// ── Notificaciones de Simulación (Debug) ───────────────────────────────────
+
+exports.simularColectivoLlegando = onCall({ region: "us-central1" }, async (request) => {
+  const { viajeId, pasajeroId } = request.data;
+  if (!viajeId || !pasajeroId) throw new HttpsError("invalid-argument", "Faltan IDs.");
+
+  try {
+    await enviarPushUsuario(pasajeroId, {
+      notification: { title: "🚌 Tu colectivo está llegando (Simulado)", body: "¡Prepárate! El bus está muy cerca." },
+      data: { tipo: "colectivo_llegando_sim", viajeId }
+    });
+    return { success: true };
+  } catch (e) { throw new HttpsError("internal", e.message); }
+});
+
+exports.simularRecordatorio = onCall({ region: "us-central1" }, async (request) => {
+  const { viajeId } = request.data;
+  if (!viajeId) throw new HttpsError("invalid-argument", "Falta viajeId.");
+
+  try {
+    const reservasSnap = await admin.firestore().collection("reservas")
+      .where("viajeId", "==", viajeId)
+      .where("estado", "==", "confirmada")
+      .get();
+
+    const promesas = reservasSnap.docs.map(resDoc => {
+      return enviarPushUsuario(resDoc.data().pasajeroUid, {
+        notification: { title: "🚌 Recordatorio de viaje (Simulado)", body: "Tu colectivo sale en aproximadamente 30 minutos." },
+        data: { tipo: "recordatorio_sim", viajeId }
+      });
+    });
+
+    await Promise.all(promesas);
+    return { success: true, count: reservasSnap.size };
+  } catch (e) { throw new HttpsError("internal", e.message); }
+});
+
+// ── Notificaciones Faltantes ───────────────────────────────────────────────
+
+exports.forzarCancelacionViajeAdmin = onCall({ region: "us-central1" }, async (request) => {
+  const { viajeId, motivo } = request.data;
+  const adminId = request.auth?.uid;
+  if (!viajeId) throw new HttpsError("invalid-argument", "Falta viajeId.");
+
+  const db = admin.firestore();
+  try {
+    const viajeRef = db.collection("viajes").doc(viajeId);
+    const viajeSnap = await viajeRef.get();
+    if (!viajeSnap.exists) throw new HttpsError("not-found", "Viaje no existe.");
+
+    const vData = viajeSnap.data();
+    const conductorUid = vData.conductorUid;
+
+    // 1. Obtener todas las reservas activas
+    const reservasSnap = await db.collection("reservas")
+      .where("viajeId", "==", viajeId)
+      .where("estado", "in", ["confirmada", "abordado"])
+      .get();
+
+    const batch = db.batch();
+
+    // 2. Cancelar el viaje
+    batch.update(viajeRef, {
+      estado: "cancelado_admin",
+      canceladoPor: adminId || "sistema",
+      motivoCancelacion: motivo || "Cancelación forzada por administrador",
+      canceladoEn: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 3. Liberar al conductor
+    if (conductorUid) {
+      batch.update(db.collection("usuarios").doc(conductorUid), {
+        disponible: true,
+        viajeActivoId: null
+      });
+    }
+
+    // 4. Cancelar reservas y preparar notificaciones
+    const promesasPush = [];
+    for (const resDoc of reservasSnap.docs) {
+      batch.update(resDoc.ref, { estado: "cancelada_viaje" });
+      promesasPush.push(enviarPushUsuario(resDoc.data().pasajeroUid, {
+        notification: {
+          title: "🚨 Viaje cancelado",
+          body: `Tu viaje con ${vData.conductorNombre} ha sido cancelado por el administrador. Se liberó tu asiento.`
+        },
+        data: { tipo: "viaje_cancelado_admin", viajeId }
+      }));
+    }
+
+    await batch.commit();
+    await Promise.all(promesasPush);
+
+    return { success: true, reservasAfectadas: reservasSnap.size };
+  } catch (e) { throw new HttpsError("internal", e.message); }
+});
+
+exports.notificarDecisionVehiculo = onDocumentUpdated(
+  {
+    document: "usuarios/{userId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const antes = event.data.before.data();
+    const ahora = event.data.after.data();
+
+    const vehiculoAntes = antes.vehiculo || {};
+    const vehiculoAhora = ahora.vehiculo || {};
+
+    if (ahora.rol === 'conductor' && vehiculoAhora.estado !== vehiculoAntes.estado) {
+      let titulo = "";
+      let cuerpo = "";
+
+      if (vehiculoAhora.estado === 'aprobado') {
+        titulo = "✅ Vehículo aprobado";
+        cuerpo = "Ya puedes iniciar viajes con tu unidad.";
+      } else if (vehiculoAhora.estado === 'rechazado') {
+        titulo = "❌ Vehículo rechazado";
+        cuerpo = `Motivo: ${vehiculoAhora.motivoRechazo || "Contacta al administrador."}`;
+      }
+
+      if (titulo !== "") {
+        await enviarPushUsuario(event.params.userId, {
+          notification: { title: titulo, body: cuerpo },
+          data: { tipo: "decision_vehiculo", userId: event.params.userId }
+        });
+      }
+    }
+  }
+);

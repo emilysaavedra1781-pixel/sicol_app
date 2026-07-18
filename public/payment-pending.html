@@ -1,0 +1,39 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Pago pendiente</title>
+    <style>
+        body {
+          font-family: sans-serif;
+          text-align: center;
+          padding-top: 60px;
+          background: #f9fafb;
+          color: #111827;
+        }
+        .icon { font-size: 48px; }
+        a {
+          display: inline-block;
+          margin-top: 20px;
+          padding: 12px 24px;
+          background: #F59E0B;
+          color: white;
+          text-decoration: none;
+          border-radius: 8px;
+          font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<div class="icon">⏳</div>
+<h2>Pago pendiente</h2>
+<p>Regresando a SICOL...</p>
+<a href="sicolapp://payment-pending">Abrir la app SICOL</a>
+<script>
+    setTimeout(function () {
+      window.location.href = "sicolapp://payment-pending";
+    }, 800);
+</script>
+</body>
+</html>

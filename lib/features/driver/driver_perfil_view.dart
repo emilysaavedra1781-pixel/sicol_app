@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'driver_home_view.dart';
 import '../../widgets/image_picker_widget.dart';
 import '../../app_theme.dart';
 
@@ -22,7 +23,22 @@ class _DriverPerfilViewState extends State<DriverPerfilView> {
     if (uid == null) return const Scaffold(body: Center(child: Text('Sesión no iniciada')));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mi Perfil de Conductor')),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: CabifyColors.primary),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const DriverHomeView()),
+              );
+            }
+          },
+        ),
+        title: const Text('Mi Perfil de Conductor'),
+      ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: _db.collection('usuarios').doc(uid).snapshots(),
         builder: (context, snapshot) {

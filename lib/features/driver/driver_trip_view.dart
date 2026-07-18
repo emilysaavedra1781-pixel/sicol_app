@@ -148,12 +148,13 @@ class _DriverTripViewState extends State<DriverTripView> with SingleTickerProvid
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCELAR', style: TextStyle(color: CabifyColors.textSecondary))),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: CabifyColors.success, foregroundColor: Colors.white),
-            child: const Text('CONFIRMAR CIERRE'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('VOLVER', style: TextStyle(color: CabifyColors.textSecondary))),
+          if (todosBajaron)
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: CabifyColors.success, foregroundColor: Colors.white),
+              child: const Text('CONFIRMAR CIERRE'),
+            ),
         ],
       ),
     );

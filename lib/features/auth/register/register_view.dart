@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../../../services/auth_service.dart';
 import 'otp_verification_view.dart';
 import '../../../app_theme.dart';
+
 
 class RegisterView extends StatefulWidget {
   final String rolInicial;
@@ -40,6 +42,9 @@ class _RegisterViewState extends State<RegisterView> {
 
   File? _fotoPerfil;
   File? _fotoVehiculo;
+  File? _pdfDni;
+  File? _pdfLicencia;
+  File? _pdfTarjeta;
   final _picker = ImagePicker();
 
   bool _loading = false;
@@ -142,6 +147,60 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
+  Future<void> _pickPdf(String tipo) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
+
+    if (result != null && result.files.single.path != null) {
+      final file = File(result.files.single.path!);
+      final size = await file.length();
+      
+      if (size > 5 * 1024 * 1024) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('El archivo no debe exceder los 5MB'), backgroundColor: CabifyColors.error)
+        );
+        return;
+      }
+
+      setState(() {
+        if (tipo == 'dni') _pdfDni = file;
+        if (tipo == 'licencia') _pdfLicencia = file;
+        if (tipo == 'tarjeta') _pdfTarjeta = file;
+      });
+    }
+  }
+
+  Widget _buildPdfPicker(String label, File? file, String tipo) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ElevatedButton.icon(
+          onPressed: () => _pickPdf(tipo),
+          icon: const Icon(Icons.picture_as_pdf_outlined),
+          label: Text(label),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: file != null ? CabifyColors.success : const Color(0xFFF3F4F6),
+            foregroundColor: file != null ? Colors.white : CabifyColors.textPrimary,
+            elevation: 0,
+            minimumSize: const Size(double.infinity, 48),
+          ),
+        ),
+        if (file != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 8),
+            child: Text(
+              file.path.split('/').last,
+              style: const TextStyle(fontSize: 11, color: CabifyColors.textSecondary),
+            ),
+          ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -195,6 +254,15 @@ class _RegisterViewState extends State<RegisterView> {
           return;
         }
 
+        // Validación de PDFs obligatorios
+        if (_pdfDni == null || _pdfLicencia == null || _pdfTarjeta == null) {
+          setState(() {
+            _loading = false;
+            _errorMessage = 'Debes subir todos los documentos requeridos (PDF)';
+          });
+          return;
+        }
+
         final placaRegistrada = await _authService.isPlacaRegistered(_placaCtrl.text.trim().toUpperCase());
         if (!mounted) return;
         if (placaRegistrada) {
@@ -242,6 +310,9 @@ class _RegisterViewState extends State<RegisterView> {
               'color': _colorCtrl.text.trim(),
               'fotoPerfil': _fotoPerfil,
               'fotoVehiculo': _fotoVehiculo,
+              'pdfDni': _pdfDni,
+              'pdfLicencia': _pdfLicencia,
+              'pdfTarjeta': _pdfTarjeta,
             },
           },
         ),
@@ -394,6 +465,13 @@ class _RegisterViewState extends State<RegisterView> {
                   _buildPhotoSelector('FOTO DE PERFIL', _fotoPerfil, false),
                   const SizedBox(height: 16),
                   _buildPhotoSelector('FOTO DEL VEHÍCULO', _fotoVehiculo, true),
+                  const SizedBox(height: 32),
+
+                  _seccionTitulo('DOCUMENTOS (PDF)'),
+                  const SizedBox(height: 16),
+                  _buildPdfPicker('Subir DNI (PDF)', _pdfDni, 'dni'),
+                  _buildPdfPicker('Subir Licencia (PDF)', _pdfLicencia, 'licencia'),
+                  _buildPdfPicker('Subir Tarjeta de Propiedad (PDF)', _pdfTarjeta, 'tarjeta'),
                   const SizedBox(height: 16),
 
                   _buildLabel('NÚMERO DE LICENCIA'),

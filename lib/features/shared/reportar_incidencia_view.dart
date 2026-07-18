@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/incidencia_service.dart';
+import '../../features/driver/driver_home_view.dart';
+import '../../features/passenger/passenger_home_view.dart';
 import '../../app_theme.dart';
 
 class ReportarIncidenciaView extends StatefulWidget {
@@ -83,7 +87,34 @@ class _ReportarIncidenciaViewState extends State<ReportarIncidenciaView> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: CabifyColors.primary),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () async {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              final uid = FirebaseAuth.instance.currentUser?.uid;
+              if (uid != null) {
+                final userDoc = await FirebaseFirestore.instance
+                    .collection('usuarios')
+                    .doc(uid)
+                    .get();
+                
+                if (!context.mounted) return;
+                
+                final data = userDoc.data();
+                Widget home = const DriverHomeView();
+                if (data != null && data['rol'] == 'pasajero') {
+                  home = const PassengerHomeView();
+                }
+
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => home),
+                );
+              } else {
+                Navigator.pop(context);
+              }
+            }
+          },
         ),
         title: const Text('Reportar Incidencia', style: TextStyle(color: CabifyColors.textPrimary, fontWeight: FontWeight.bold)),
       ),

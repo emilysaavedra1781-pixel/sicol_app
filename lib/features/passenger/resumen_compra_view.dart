@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../services/deep_link_service.dart';
 import '../../app_theme.dart';
 
 class ResumenCompraView extends StatefulWidget {
@@ -151,6 +152,14 @@ class _ResumenCompraViewState extends State<ResumenCompraView> {
   Future<void> _confirmarYPagar() async {
     setState(() => _procesando = true);
     try {
+      // Guardar contexto para el ciclo de reservas múltiples al volver del deep link
+      DeepLinkService().lastPurchaseContext = {
+        'viajeId': widget.viajeId,
+        'paradero': widget.paradero,
+        'rutaSeleccionada': widget.viajeData['ruta'],
+        'nombrePasajero': widget.viajerosNombres.values.first, // Simplificado para el diálogo
+      };
+
       final Uri url = Uri.parse(widget.initPoint);
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);

@@ -13,13 +13,63 @@ class VerificacionUbicacion {
   });
 }
 
+class _Punto {
+  final double lat;
+  final double lng;
+  const _Punto(this.lat, this.lng);
+}
+
+class _Ruta {
+  final List<_Punto> puntosInicio;
+  final List<_Punto> puntosDestino;
+  const _Ruta({required this.puntosInicio, required this.puntosDestino});
+}
+
 class LocationService {
   static const double _radioPermitidoMetros = 500; // RF34: Radio de 500 metros
   static const double _radioCierreMetros = 500;
 
-  static const Map<String, _Punto> _puntosInicioRuta = {
-    'chosica_lima': _Punto(-11.9347, -76.6952), // Inicio Chosica
-    'lima_chosica': _Punto(-12.193920, -76.971401), // Inicio Lima (Villa El Salvador 15842)
+  // Puntos de referencia individuales (constantes reales, no entradas de mapa).
+  // Esto es lo que permite reutilizarlos como const más abajo.
+  static const _Punto _puntoChosicaLima =
+  _Punto(-12.164525647438607, -76.9851131814232);
+  static const _Punto _puntoLimaChosica =
+  _Punto(-12.193920, -76.971401);
+  static const _Punto _puntoRuta3 =
+  _Punto(-12.185074898652697, -76.96027054790292);
+  static const _Punto _puntoRuta4 =
+  _Punto(-12.1982351, -76.9969246);
+
+  // Se conserva por si algo del proyecto todavía necesita consultar
+  // los 4 puntos de referencia por nombre.
+  static const Map<String, _Punto> _puntosReferencia = {
+    'chosica_lima': _puntoChosicaLima,
+    'lima_chosica': _puntoLimaChosica,
+    'ruta3': _puntoRuta3,
+    'ruta4': _puntoRuta4,
+  };
+
+  static const Map<String, _Ruta> _rutas = {
+    'chosica_lima': _Ruta(
+      puntosInicio: [
+        _puntoChosicaLima,
+        _puntoRuta3,
+        _puntoRuta4,
+      ],
+      puntosDestino: [
+        _puntoLimaChosica,
+      ],
+    ),
+    'lima_chosica': _Ruta(
+      puntosInicio: [
+        _puntoLimaChosica,
+      ],
+      puntosDestino: [
+        _puntoChosicaLima,
+        _puntoRuta3,
+        _puntoRuta4,
+      ],
+    ),
   };
 
   /// Pide permisos de ubicación si no los tiene.
@@ -42,7 +92,7 @@ class LocationService {
   }
 
   /// Verifica que la ubicación actual del conductor esté dentro del radio
-  /// permitido de alguno de los puntos de inicio de ruta.
+  /// permitido de alguno de los puntos de inicio de las rutas principales.
   /// Lanza una excepción con mensaje claro si algo falla.
   Future<VerificacionUbicacion> verificarUbicacionParaIniciarViaje() async {
     final tienePermiso = await _asegurarPermisos();
@@ -58,16 +108,18 @@ class LocationService {
     String rutaMasCercana = '-';
     double distanciaMinima = double.infinity;
 
-    for (final entry in _puntosInicioRuta.entries) {
-      final distancia = Geolocator.distanceBetween(
-        posicion.latitude,
-        posicion.longitude,
-        entry.value.lat,
-        entry.value.lng,
-      );
-      if (distancia < distanciaMinima) {
-        distanciaMinima = distancia;
-        rutaMasCercana = entry.key;
+    for (final entry in _rutas.entries) {
+      for (final punto in entry.value.puntosInicio) {
+        final distancia = Geolocator.distanceBetween(
+          posicion.latitude,
+          posicion.longitude,
+          punto.lat,
+          punto.lng,
+        );
+        if (distancia < distanciaMinima) {
+          distanciaMinima = distancia;
+          rutaMasCercana = entry.key;
+        }
       }
     }
 
@@ -79,7 +131,7 @@ class LocationService {
   }
 
   /// Verifica que la ubicación actual del conductor esté dentro del radio
-  /// permitido del punto de DESTINO de la ruta dada, antes de finalizar el viaje.
+  /// permitido de alguno de los puntos de DESTINO de la ruta dada.
   Future<VerificacionUbicacion> verificarUbicacionParaFinalizarViaje(
       String rutaActual) async {
     final tienePermiso = await _asegurarPermisos();
@@ -88,12 +140,8 @@ class LocationService {
           'Necesitas activar el permiso de ubicación para finalizar el viaje.');
     }
 
-    // El destino es el punto de inicio de la ruta contraria.
-    final rutaDestino =
-    rutaActual == 'chosica_lima' ? 'lima_chosica' : 'chosica_lima';
-    final puntoDestino = _puntosInicioRuta[rutaDestino];
-
-    if (puntoDestino == null) {
+    final ruta = _rutas[rutaActual];
+    if (ruta == null) {
       throw Exception('No se reconoce la ruta del viaje.');
     }
 
@@ -101,39 +149,37 @@ class LocationService {
       desiredAccuracy: LocationAccuracy.high,
     );
 
-    final distancia = Geolocator.distanceBetween(
-      posicion.latitude,
-      posicion.longitude,
-      puntoDestino.lat,
-      puntoDestino.lng,
-    );
+    double distanciaMinima = double.infinity;
+    for (final punto in ruta.puntosDestino) {
+      final distancia = Geolocator.distanceBetween(
+        posicion.latitude,
+        posicion.longitude,
+        punto.lat,
+        punto.lng,
+      );
+      if (distancia < distanciaMinima) {
+        distanciaMinima = distancia;
+      }
+    }
 
     return VerificacionUbicacion(
-      dentroDelRango: distancia <= _radioCierreMetros,
-      distanciaMetros: distancia,
-      rutaMasCercana: rutaDestino,
+      dentroDelRango: distanciaMinima <= _radioCierreMetros,
+      distanciaMetros: distanciaMinima,
+      rutaMasCercana: rutaActual,
     );
   }
 
-  Map<String, double> getCoordenadasInicio(String ruta) {
-    final punto = _puntosInicioRuta[ruta];
-    if (punto == null) return {'lat': 0.0, 'lng': 0.0};
-    return {'lat': punto.lat, 'lng': punto.lng};
+  List<Map<String, double>> getCoordenadasInicio(String rutaId) {
+    final ruta = _rutas[rutaId];
+    if (ruta == null) return [];
+    return ruta.puntosInicio.map((p) => {'lat': p.lat, 'lng': p.lng}).toList();
   }
 
-  Map<String, double> getCoordenadasDestino(String rutaActual) {
-    final rutaDestino =
-    rutaActual == 'chosica_lima' ? 'lima_chosica' : 'chosica_lima';
-    final punto = _puntosInicioRuta[rutaDestino];
-    if (punto == null) return {'lat': 0.0, 'lng': 0.0};
-    return {'lat': punto.lat, 'lng': punto.lng};
+  List<Map<String, double>> getCoordenadasDestino(String rutaId) {
+    final ruta = _rutas[rutaId];
+    if (ruta == null) return [];
+    return ruta.puntosDestino.map((p) => {'lat': p.lat, 'lng': p.lng}).toList();
   }
 
   double getRadioPermitido() => _radioPermitidoMetros;
-}
-
-class _Punto {
-  final double lat;
-  final double lng;
-  const _Punto(this.lat, this.lng);
 }

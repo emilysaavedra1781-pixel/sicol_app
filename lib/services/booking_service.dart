@@ -105,6 +105,7 @@ class BookingService {
 
   // ─── RF11: Cancelar reserva ───────────────────────────────────────────────
 
+  /// Cancela una reserva del pasajero. Solo permitido si el estado es 'confirmada'.
   Future<void> cancelarReserva({
     required String reservaId,
     required String viajeId,
@@ -112,12 +113,44 @@ class BookingService {
   }) async {
     final reservaRef = _db.collection('reservas').doc(reservaId);
     
-    // CP06: Verificar si la reserva existe o ya fue cancelada
+    // Validar estado actual de la reserva
     final snap = await reservaRef.get();
     if (!snap.exists) throw Exception('Esta reserva no es válida.');
-    if (snap.data()?['estado'] == 'cancelada') throw Exception('Esta reserva ya fue cancelada.');
+    
+    final estadoActual = snap.data()?['estado'];
+    if (estadoActual == 'cancelada') throw Exception('Esta reserva ya fue cancelada.');
+    if (estadoActual == 'abordado') throw Exception('No es posible cancelar: el pasajero ya abordó el vehículo.');
+    if (estadoActual != 'confirmada') throw Exception('No puedes cancelar la reserva en su estado actual ($estadoActual).');
 
+    await _ejecutarCancelacionCore(reservaId, viajeId, numeroAsiento, 'cancelada');
+  }
+
+  /// Función especial para Administradores que permite cancelar sin restricciones de estado.
+  Future<void> forzarCancelacionAdmin({
+    required String reservaId,
+    required String viajeId,
+    required int numeroAsiento,
+    required String adminUid,
+    String motivo = 'Cancelación forzada por administrador',
+  }) async {
+    await _ejecutarCancelacionCore(reservaId, viajeId, numeroAsiento, 'cancelada', auditData: {
+      'canceladoPorAdmin': true,
+      'adminId': adminUid,
+      'motivoAdmin': motivo,
+      'fechaCancelacionAdmin': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Lógica compartida para liberar asiento y marcar reserva como cancelada.
+  Future<void> _ejecutarCancelacionCore(
+    String reservaId, 
+    String viajeId, 
+    int numeroAsiento, 
+    String nuevoEstado,
+    {Map<String, dynamic>? auditData}
+  ) async {
     final viajeRef = _db.collection('viajes').doc(viajeId);
+    final reservaRef = _db.collection('reservas').doc(reservaId);
 
     await _db.runTransaction((tx) async {
       final viajeSnap = await tx.get(viajeRef);
@@ -125,7 +158,7 @@ class BookingService {
 
       final data = viajeSnap.data()!;
 
-      // ── Actualizar mapa asientos ─────────────────────────────────
+      // 1. Liberar el asiento en el mapa del viaje
       final asientosMapa = Map<String, dynamic>.from(data['asientos'] ?? {});
       final key = 'asiento_$numeroAsiento';
       asientosMapa[key] = {
@@ -134,7 +167,7 @@ class BookingService {
         'pasajero': null,
       };
 
-      // ── Actualizar array asientosListaOcupados ───────────────────
+      // 2. Actualizar lista de ocupados y totales
       final ocupadosLista = List<int>.from(data['asientosListaOcupados'] ?? []);
       ocupadosLista.remove(numeroAsiento);
 
@@ -148,7 +181,11 @@ class BookingService {
         'ingresoTotal': ingresoTotal,
       });
 
-      tx.update(reservaRef, {'estado': 'cancelada'});
+      // 3. Marcar reserva como cancelada (con auditoría si aplica)
+      final Map<String, dynamic> updateReserva = {'estado': nuevoEstado};
+      if (auditData != null) updateReserva.addAll(auditData);
+      
+      tx.update(reservaRef, updateReserva);
     });
   }
 }

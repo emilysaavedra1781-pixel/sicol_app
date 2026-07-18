@@ -37,6 +37,14 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
   @override
   void initState() {
     super.initState();
+    _resetState();
+  }
+
+  void _resetState() {
+    _asientosSeleccionados.clear();
+    _viajerosNombres.clear();
+    _viajerosDnis.clear();
+    _guardando = false;
   }
 
   void _onSeatTap(int num, List<int> ocupados, Map<String, dynamic> asientosMapa) {
@@ -139,6 +147,23 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
 
   Future<void> _mostrarFormularioViajeros(Map<String, dynamic> viajeData) async {
     final List<int> sortedAsientos = _asientosSeleccionados.toList()..sort();
+    final user = FirebaseAuth.instance.currentUser;
+
+    // Precargar datos del titular en el primer asiento seleccionado si aún están vacíos
+    if (user != null && sortedAsientos.isNotEmpty) {
+      final firstAsiento = sortedAsientos.first;
+      if (_viajerosNombres[firstAsiento] == null || _viajerosNombres[firstAsiento]!.isEmpty) {
+        final userDoc = await _db.collection('usuarios').doc(user.uid).get();
+        if (userDoc.exists) {
+          final userData = userDoc.data() as Map<String, dynamic>;
+          final nombreCompleto = '${userData['nombre'] ?? ''} ${userData['apellido'] ?? ''}'.trim();
+          _viajerosNombres[firstAsiento] = nombreCompleto;
+          _viajerosDnis[firstAsiento] = userData['dni'] ?? '';
+        }
+      }
+    }
+
+    if (!mounted) return;
     
     showModalBottomSheet(
       context: context,
@@ -166,27 +191,41 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
                 children: [
                   Text('Datos de los viajeros', style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 24),
-                  ...sortedAsientos.map((n) => Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('ASIENTO $n', style: const TextStyle(fontWeight: FontWeight.w800, color: CabifyColors.primary, fontSize: 12, letterSpacing: 1)),
-                        const SizedBox(height: 12),
-                        TextField(
-                          onChanged: (v) => setModalState(() => _viajerosNombres[n] = v),
-                          decoration: const InputDecoration(hintText: 'Nombre completo', prefixIcon: Icon(Icons.person_outline)),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          onChanged: (v) => setModalState(() => _viajerosDnis[n] = v),
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
-                          decoration: const InputDecoration(hintText: 'DNI (8 dígitos)', prefixIcon: Icon(Icons.badge_outlined)),
-                        ),
-                      ],
-                    ),
-                  )),
+                  ...sortedAsientos.map((n) {
+                    final isTitular = n == sortedAsientos.first;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text('ASIENTO $n', style: const TextStyle(fontWeight: FontWeight.w800, color: CabifyColors.primary, fontSize: 12, letterSpacing: 1)),
+                              if (isTitular) 
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 8.0),
+                                  child: Text('(Tú)', style: TextStyle(color: CabifyColors.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            initialValue: _viajerosNombres[n],
+                            onChanged: (v) => setModalState(() => _viajerosNombres[n] = v),
+                            decoration: const InputDecoration(hintText: 'Nombre completo', prefixIcon: Icon(Icons.person_outline)),
+                          ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            initialValue: _viajerosDnis[n],
+                            onChanged: (v) => setModalState(() => _viajerosDnis[n] = v),
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
+                            decoration: const InputDecoration(hintText: 'DNI (8 dígitos)', prefixIcon: Icon(Icons.badge_outlined)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: !valid ? null : () {

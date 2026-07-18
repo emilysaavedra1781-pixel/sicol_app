@@ -131,6 +131,9 @@ await _auth.verifyPhoneNumber(
     required String color,
     File? fotoPerfil,
     File? fotoVehiculo,
+    File? pdfDni,
+    File? pdfLicencia,
+    File? pdfTarjeta,
   }) async {
     final emailAuth = '$celular@sicol.pe';
     await _auth.createUserWithEmailAndPassword(
@@ -149,6 +152,22 @@ await _auth.verifyPhoneNumber(
       fotoVehiculoUrl = await uploadImage(fotoVehiculo, 'usuarios/$uid/vehiculo.jpg');
     }
 
+    // Subida de PDFs
+    String? dniUrl;
+    if (pdfDni != null) {
+      dniUrl = await uploadImage(pdfDni, 'documentos/conductores/$uid/dni.pdf');
+    }
+
+    String? licenciaUrl;
+    if (pdfLicencia != null) {
+      licenciaUrl = await uploadImage(pdfLicencia, 'documentos/conductores/$uid/licencia.pdf');
+    }
+
+    String? tarjetaUrl;
+    if (pdfTarjeta != null) {
+      tarjetaUrl = await uploadImage(pdfTarjeta, 'documentos/conductores/$uid/tarjeta_propiedad.pdf');
+    }
+
     await _db.collection('usuarios').doc(uid).set({
       'uid': uid,
       'dni': dni,
@@ -165,6 +184,11 @@ await _auth.verifyPhoneNumber(
       'bloqueado': false,
       'intentosFallidos': 0,
       'creadoEn': FieldValue.serverTimestamp(),
+      'documentos': {
+        'dni': {'url': dniUrl, 'estado': 'pendiente'},
+        'licencia': {'url': licenciaUrl, 'estado': 'pendiente'},
+        'tarjeta_propiedad': {'url': tarjetaUrl, 'estado': 'pendiente'},
+      },
       'vehiculo': {
         'placa': placa,
         'capacidad': capacidad,
@@ -172,6 +196,8 @@ await _auth.verifyPhoneNumber(
         'marca': marca,
         'color': color,
         'fotoVehiculoUrl': fotoVehiculoUrl,
+        'estado': 'pendiente',
+        'fechaRegistro': FieldValue.serverTimestamp(),
       },
     });
   }
@@ -202,8 +228,9 @@ await _auth.verifyPhoneNumber(
     }
 
     try {
+      final emailAuth = '$celular@sicol.pe';
       await _auth.signInWithEmailAndPassword(
-        email: data['email'],
+        email: emailAuth,
         password: password,
       );
       await userDoc.reference.update({'intentosFallidos': 0});
@@ -260,8 +287,10 @@ await _auth.verifyPhoneNumber(
     }
 
     try {
+      final celular = data['celular'];
+      final emailAuth = '$celular@sicol.pe';
       await _auth.signInWithEmailAndPassword(
-        email: data['email'],
+        email: emailAuth,
         password: password,
       );
       await userDoc.reference.update({'intentosFallidos': 0});

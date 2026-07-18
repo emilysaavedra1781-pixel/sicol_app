@@ -4,6 +4,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/notification_service.dart';
+import 'services/deep_link_service.dart';
+import 'features/passenger/payment_result_view.dart';
 import 'app_theme.dart';
 import 'features/auth/login/login_view.dart';
 import 'features/passenger/passenger_home_view.dart';
@@ -35,8 +37,56 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final _deepLinkService = DeepLinkService();
+
+  @override
+  void initState() {
+    super.initState();
+    _deepLinkService.onPaymentResult = _handlePaymentResult;
+    _deepLinkService.init();
+  }
+
+  @override
+  void dispose() {
+    _deepLinkService.dispose();
+    super.dispose();
+  }
+
+  void _handlePaymentResult(String status) {
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+
+    String cleanStatus;
+    switch (status) {
+      case 'payment-success': cleanStatus = 'success'; break;
+      case 'payment-error': cleanStatus = 'error'; break;
+      case 'payment-pending': cleanStatus = 'pending'; break;
+      default: return;
+    }
+
+    final purchaseData = DeepLinkService().lastPurchaseContext;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaymentResultView(
+          status: cleanStatus,
+          viajeId: purchaseData?['viajeId'],
+          paradero: purchaseData?['paradero'],
+          nombrePasajero: purchaseData?['nombrePasajero'],
+          rutaSeleccionada: purchaseData?['rutaSeleccionada'],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +134,7 @@ class AuthGate extends StatelessWidget {
                 future: FirebaseFirestore.instance.collection('admins').doc(uid).get(),
                 builder: (context, adminSnap) {
                   if (adminSnap.connectionState == ConnectionState.waiting) return _loading();
-                  
+
                   if (!adminSnap.hasData || !adminSnap.data!.exists) {
                     FirebaseAuth.instance.signOut();
                     return const LoginView();

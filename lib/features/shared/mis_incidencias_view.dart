@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../services/incidencia_service.dart';
+import '../../features/driver/driver_home_view.dart';
+import '../../features/passenger/passenger_home_view.dart';
 import '../../app_theme.dart';
 
 class MisIncidenciasView extends StatefulWidget {
@@ -25,7 +27,30 @@ class _MisIncidenciasViewState extends State<MisIncidenciasView> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: CabifyColors.primary),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () async {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              // Si no puede hacer pop, determinamos el Home según el rol
+              final userDoc = await FirebaseFirestore.instance
+                  .collection('usuarios')
+                  .doc(_currentUid)
+                  .get();
+              
+              if (!context.mounted) return;
+              
+              final data = userDoc.data();
+              Widget home = const DriverHomeView();
+              if (data != null && data['rol'] == 'pasajero') {
+                home = const PassengerHomeView();
+              }
+
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => home),
+              );
+            }
+          },
         ),
         title: const Text('Mis Incidencias', style: TextStyle(color: CabifyColors.textPrimary, fontWeight: FontWeight.bold)),
       ),
@@ -35,6 +60,8 @@ class _MisIncidenciasViewState extends State<MisIncidenciasView> {
           if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
           
           if (snapshot.hasError) {
+            final error = snapshot.error.toString();
+            // Si el error es por falta de índice, Firestore suele dar un link
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
@@ -43,8 +70,13 @@ class _MisIncidenciasViewState extends State<MisIncidenciasView> {
                   children: [
                     const Icon(Icons.error_outline, color: CabifyColors.error, size: 48),
                     const SizedBox(height: 16),
-                    Text('Error de conexión con el historial.', 
-                      textAlign: TextAlign.center, style: TextStyle(color: CabifyColors.error)),
+                    const Text('Error al cargar el historial.', 
+                      textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(error.contains('failed-precondition') 
+                      ? 'Falta un índice en Firestore. Solicita al administrador crearlo.'
+                      : 'Verifica tu conexión e inténtalo de nuevo.',
+                      textAlign: TextAlign.center, style: const TextStyle(color: CabifyColors.textSecondary, fontSize: 12)),
                   ],
                 ),
               ),

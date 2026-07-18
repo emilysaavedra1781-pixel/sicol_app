@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'driver_home_view.dart';
 import '../../app_theme.dart';
 
 class DriverViajeDetalleView extends StatelessWidget {
@@ -36,7 +37,16 @@ class DriverViajeDetalleView extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: CabifyColors.primary),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const DriverHomeView()),
+              );
+            }
+          },
         ),
         title: const Text('Detalle del Viaje', style: TextStyle(fontSize: 16, color: CabifyColors.textPrimary, fontWeight: FontWeight.bold)),
       ),

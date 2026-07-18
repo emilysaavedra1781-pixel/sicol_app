@@ -27,6 +27,28 @@ class ReservasHistorialView extends StatelessWidget {
             .orderBy('creadoEn', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, color: CabifyColors.error, size: 48),
+                    const SizedBox(height: 16),
+                    const Text('Error al cargar historial.', 
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(snapshot.error.toString().contains('failed-precondition')
+                      ? 'Se requiere un índice compuesto en Firestore.'
+                      : 'Verifica tu conexión.',
+                      textAlign: TextAlign.center, style: const TextStyle(color: CabifyColors.textSecondary, fontSize: 12)),
+                  ],
+                ),
+              ),
+            );
+          }
+
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           
           final docs = snapshot.data!.docs;

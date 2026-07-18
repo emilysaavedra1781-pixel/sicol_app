@@ -157,8 +157,19 @@ class _BuscarTabState extends State<BuscarTab> {
               const SizedBox(height: 32),
               _buildSelectorRuta(),
               const SizedBox(height: 32),
-              if (_rutaSeleccionada != null && _paraderoSeleccionado != null)
+              if (_rutaSeleccionada != null) ...[
                 _buildListaColectivos(),
+                if (_paraderoSeleccionado == null)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: Text(
+                        'Selecciona un paradero para filtrar por parada específica',
+                        style: TextStyle(color: CabifyColors.textSecondary, fontSize: 13, fontStyle: FontStyle.italic),
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
@@ -310,17 +321,23 @@ class _BuscarTabState extends State<BuscarTab> {
         StreamBuilder<QuerySnapshot>(
           stream: _db
               .collection('viajes')
-              .where('estado', isEqualTo: 'activo')
+              .where('estado', whereIn: ['activo', 'en_camino'])
               .where('ruta', isEqualTo: _rutaSeleccionada)
               .snapshots(),
           builder: (context, snapRuta) {
+            if (snapRuta.hasError) {
+              return Center(child: Text('Error: ${snapRuta.error}'));
+            }
             return StreamBuilder<QuerySnapshot>(
               stream: _db
                   .collection('viajes')
-                  .where('estado', isEqualTo: 'activo')
+                  .where('estado', whereIn: ['activo', 'en_camino'])
                   .where('ruta', isNull: true)
                   .snapshots(),
               builder: (context, snapNulos) {
+                if (snapNulos.hasError) {
+                  return Center(child: Text('Error: ${snapNulos.error}'));
+                }
                 if (!snapRuta.hasData || !snapNulos.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
