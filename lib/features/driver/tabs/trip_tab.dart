@@ -170,7 +170,7 @@ class TripTab extends StatelessWidget {
                   cerrando
                       ? 'Terminando...'
                       : !llegoAlDestino
-                      ? 'Terminar viaje (en ruta...)'
+                      ? (asientosOcupados > 0 ? 'Esperando pasajeros...' : 'Terminar viaje (vacío)')
                       : 'Terminar viaje',
                   style: const TextStyle(
                       fontSize: 16, fontWeight: FontWeight.w600),

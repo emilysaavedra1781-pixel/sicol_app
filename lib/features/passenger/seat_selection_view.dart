@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_functions/cloud_functions.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../services/booking_service.dart';
+import '../../services/validation_service.dart';
 import '../../app_theme.dart';
 import 'resumen_compra_view.dart';
 
@@ -32,6 +32,7 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
   final Map<int, String> _viajerosDnis = {}; 
   
   final _db = FirebaseFirestore.instance;
+  final _bookingService = BookingService();
   bool _guardando = false;
 
   @override
@@ -173,7 +174,7 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
         builder: (context, setModalState) {
           bool valid = true;
           for(var n in sortedAsientos) {
-            if ((_viajerosNombres[n]?.isEmpty ?? true) || (_viajerosDnis[n]?.length != 8)) {
+            if (!ValidationService.esViajeroValido(_viajerosNombres[n], _viajerosDnis[n])) {
               valid = false;
             }
           }
@@ -246,52 +247,60 @@ class _SeatSelectionViewState extends State<SeatSelectionView> {
 
   Future<void> _bloquearYAvanzar(Map<String, dynamic> viajeData) async {
     setState(() => _guardando = true);
-    final user = FirebaseAuth.instance.currentUser;
     
     try {
-      // 1. Bloquear asientos y generar preferencia en el backend
-      final result = await FirebaseFunctions.instanceFor(region: 'us-central1')
-          .httpsCallable('bloquearYCrearPreferencia')
-          .call({
-        'viajeId': widget.viajeId,
-        'pasajeroId': user?.uid,
-        'asientos': _asientosSeleccionados.toList(),
-        'viajeros': _asientosSeleccionados.map((n) => {
+      final result = await _bookingService.bloquearAsientosYCrearPreferencia(
+        viajeId: widget.viajeId,
+        asientos: _asientosSeleccionados.toList(),
+        viajeros: _asientosSeleccionados.map((n) => {
           'asiento': n,
           'nombre': _viajerosNombres[n],
           'dni': _viajerosDnis[n],
         }).toList(),
-        'monto': 15.0 * _asientosSeleccionados.length,
-        'email': user?.email,
-        'paradero': widget.paradero,
-      });
+        monto: 15.0 * _asientosSeleccionados.length,
+        paradero: widget.paradero,
+      );
 
-      final String? initPoint = result.data['init_point'];
-      final String? reservaGroupId = result.data['reservaGroupId'];
-      
-      if (initPoint != null && reservaGroupId != null) {
-        // 2. CP01: Avanzar a la pantalla de resumen (Confirmación de compra)
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ResumenCompraView(
-              reservaGroupId: reservaGroupId,
-              viajeId: widget.viajeId,
-              asientos: _asientosSeleccionados.toList(),
-              viajerosNombres: _viajerosNombres,
-              viajerosDnis: _viajerosDnis,
-              paradero: widget.paradero,
-              initPoint: initPoint,
-              viajeData: viajeData,
+      if (result['success'] == true) {
+        final String? initPoint = result['initPoint'];
+        final String? reservaGroupId = result['reservaGroupId'];
+        
+        if (initPoint != null && reservaGroupId != null) {
+          if (!mounted) return;
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ResumenCompraView(
+                reservaGroupId: reservaGroupId,
+                viajeId: widget.viajeId,
+                asientos: _asientosSeleccionados.toList(),
+                viajerosNombres: _viajerosNombres,
+                viajerosDnis: _viajerosDnis,
+                paradero: widget.paradero,
+                initPoint: initPoint,
+                viajeData: viajeData,
+              ),
             ),
-          ),
-        );
+          );
+        }
+      } else {
+        throw Exception(result['error']);
       }
     } catch (e) {
       if (mounted) {
+        String errorMsg = e.toString().replaceAll("Exception: ", "");
+        
+        if (errorMsg.contains("seats-occupied")) {
+          errorMsg = "Uno de los asientos elegidos acaba de ser ocupado. Por favor elige otros.";
+          _resetState();
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString().replaceAll("Exception: ", "")}'), backgroundColor: CabifyColors.error)
+          SnackBar(
+            content: Text(errorMsg), 
+            backgroundColor: CabifyColors.error,
+            duration: const Duration(seconds: 4),
+          )
         );
       }
     } finally {

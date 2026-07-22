@@ -28,45 +28,86 @@ Widget passengerCard({
 
       return Card(
         margin: const EdgeInsets.only(bottom: 12),
+        elevation: 1,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            leading: CircleAvatar(
-              backgroundColor: finalizado ? Colors.grey[100] : (abordado ? CabifyColors.success.withValues(alpha: 0.1) : CabifyColors.primary.withValues(alpha: 0.1)),
-              child: Icon(
-                finalizado ? Icons.check_circle : (abordado ? Icons.how_to_reg : Icons.person),
-                color: finalizado ? Colors.grey : (abordado ? CabifyColors.success : CabifyColors.primary),
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // Avatar
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: finalizado 
+                    ? Colors.grey[100] 
+                    : (abordado ? CabifyColors.success.withValues(alpha: 0.1) : CabifyColors.primary.withValues(alpha: 0.1)),
+                child: Icon(
+                  finalizado ? Icons.check_circle : (abordado ? Icons.how_to_reg : Icons.person),
+                  color: finalizado ? Colors.grey : (abordado ? CabifyColors.success : CabifyColors.primary),
+                  size: 20,
+                ),
               ),
-            ),
-            title: Text(pasajero['nombre'] ?? 'Pasajero', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                // CP01: Mostrar DNI y Paradero
-                Text('DNI: ${pasajero['dni'] ?? "-"} · Asiento ${pasajero['asiento']}', 
-                  style: const TextStyle(fontSize: 11, color: CabifyColors.textSecondary)),
-                Text('Recojo: ${pasajero['paradero'] ?? "-"}', 
-                  style: const TextStyle(fontSize: 11, color: CabifyColors.primary, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (data != null)
-                  IconButton(
-                    icon: const Icon(Icons.receipt_long_rounded, color: CabifyColors.textSecondary, size: 20),
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ComprobantePagoView(reservaId: snap.data!.docs.first.id))),
-                  ),
-                if (!finalizado && !abordado)
-                  IconButton(
-                    icon: const Icon(Icons.location_on_rounded, color: CabifyColors.primary, size: 20),
-                    onPressed: () => _notificarLlegada(context, pasajero['nombre'] ?? 'Pasajero'),
-                  ),
-                _buildAction(finalizado, abordado, onValidar),
-              ],
-            ),
+              const SizedBox(width: 16),
+              
+              // Información Central (Nombre, DNI, Paradero)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      pasajero['nombre'] ?? 'Pasajero',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: CabifyColors.textPrimary),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'DNI: ${pasajero['dni'] ?? "-"} · Asiento ${pasajero['asiento']}',
+                      style: const TextStyle(fontSize: 11, color: CabifyColors.textSecondary),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 10, color: CabifyColors.primary),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            pasajero['paradero'] ?? "-",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11, color: CabifyColors.primary, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Acciones a la Derecha
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (data != null)
+                    IconButton(
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(8),
+                      icon: const Icon(Icons.receipt_long_rounded, color: CabifyColors.textSecondary, size: 20),
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ComprobantePagoView(reservaId: snap.data!.docs.first.id))),
+                    ),
+                  if (!finalizado && !abordado)
+                    IconButton(
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(8),
+                      icon: const Icon(Icons.location_on_rounded, color: CabifyColors.primary, size: 20),
+                      onPressed: () => _notificarLlegada(context, pasajero['nombre'] ?? 'Pasajero'),
+                    ),
+                  const SizedBox(width: 4),
+                  _buildAction(finalizado, abordado, onValidar),
+                ],
+              ),
+            ],
           ),
         ),
       );

@@ -43,15 +43,22 @@ class _ReservaDetalleViewState extends State<ReservaDetalleView> {
   // Lógica de habilitación de botón "Ya bajé"
   StreamSubscription<Position>? _positionSubscription;
   Timer? _debounceTimer;
+  Timer? _fallbackTimer;
   double? _distanciaAlObjetivo;
   bool _habilitarBotonBajada = false;
   String _etaText = '';
   String? _ultimaRutaEvaluada;
+  
+  // Seguimiento de movimiento para fallback
+  DateTime _lastMovementTime = DateTime.now();
+  Position? _lastPos;
 
   // Parámetros configurables
   static const double _radioHabilitacionMetros = 100.0;
   static const int _segundosConfirmacionSostenida = 20;
   static const double _velocidadPromedioKmh = 30.0;
+  static const int _timeoutNoMovimientoMinutos = 2;
+  static const double _umbralMovimientoMetros = 10.0;
 
   // Puntos de referencia individuales (constantes reales, no entradas de mapa).
   // Un acceso tipo mapa['clave']! NO es válido dentro de una expresión const,
@@ -99,13 +106,65 @@ class _ReservaDetalleViewState extends State<ReservaDetalleView> {
   void initState() {
     super.initState();
     _iniciarSeguimientoGps();
+    _iniciarFallbackTimer();
   }
 
   @override
   void dispose() {
     _positionSubscription?.cancel();
     _debounceTimer?.cancel();
+    _fallbackTimer?.cancel();
     super.dispose();
+  }
+
+  void _iniciarFallbackTimer() {
+    _fallbackTimer?.cancel();
+    _fallbackTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (_habilitarBotonBajada) return;
+      
+      final diff = DateTime.now().difference(_lastMovementTime);
+      if (diff.inMinutes >= _timeoutNoMovimientoMinutos) {
+        // Verificar si el viaje está en curso antes de activar
+        _verificarYActivarSimulacion();
+      }
+    });
+  }
+
+  Future<void> _verificarYActivarSimulacion() async {
+    final doc = await FirebaseFirestore.instance.collection('reservas').doc(widget.reservaId).get();
+    if (doc.exists && doc.data()?['estado'] == 'abordado') {
+      _activarLlegadaSimulada();
+    }
+  }
+
+  Future<void> _activarLlegadaSimulada() async {
+    if (_habilitarBotonBajada) return;
+    
+    try {
+      await FirebaseFirestore.instance
+          .collection('reservas')
+          .doc(widget.reservaId)
+          .update({
+            'llegadaSimulada': true,
+            'habilitarBajada': true,
+            'fechaSimulacion': FieldValue.serverTimestamp(),
+          });
+      
+      setState(() {
+        _habilitarBotonBajada = true;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Simulación de llegada activada por falta de movimiento GPS.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error al activar llegada simulada: $e');
+    }
   }
 
   void _iniciarSeguimientoGps() {
@@ -115,10 +174,46 @@ class _ReservaDetalleViewState extends State<ReservaDetalleView> {
         distanceFilter: 5, // Actualizar cada 5 metros
       ),
     ).listen((Position position) {
+      // Actualizar tiempo de movimiento si la distancia es significativa
+      if (_lastPos == null) {
+        _lastPos = position;
+        _lastMovementTime = DateTime.now();
+      } else {
+        final dist = Geolocator.distanceBetween(
+          _lastPos!.latitude, _lastPos!.longitude, 
+          position.latitude, position.longitude
+        );
+        if (dist >= _umbralMovimientoMetros) {
+          _lastPos = position;
+          _lastMovementTime = DateTime.now();
+        }
+      }
+
       if (_ultimaRutaEvaluada != null) {
         _evaluarProximidad(position, _ultimaRutaEvaluada!);
       }
     });
+  }
+
+  Future<void> _confirmarLlegadaPorGps() async {
+    if (_habilitarBotonBajada) return;
+    
+    try {
+      await FirebaseFirestore.instance
+          .collection('reservas')
+          .doc(widget.reservaId)
+          .update({
+            'llegadaRealGps': true,
+            'habilitarBajada': true,
+            'fechaLlegadaGps': FieldValue.serverTimestamp(),
+          });
+      
+      setState(() {
+        _habilitarBotonBajada = true;
+      });
+    } catch (e) {
+      debugPrint('Error al confirmar llegada por GPS: $e');
+    }
   }
 
   void _evaluarProximidad(Position userPos, String rutaId) {
@@ -147,7 +242,7 @@ class _ReservaDetalleViewState extends State<ReservaDetalleView> {
     if (distance <= _radioHabilitacionMetros) {
       if (_debounceTimer == null && !_habilitarBotonBajada) {
         _debounceTimer = Timer(const Duration(seconds: _segundosConfirmacionSostenida), () {
-          setState(() => _habilitarBotonBajada = true);
+          _confirmarLlegadaPorGps();
         });
       }
     } else {
@@ -232,6 +327,13 @@ class _ReservaDetalleViewState extends State<ReservaDetalleView> {
           final viajeId = res['viajeId'] ?? '';
           final monto = (res['monto'] as num?)?.toDouble() ?? 15.0;
           final estadoReserva = res['estado'] ?? 'confirmada';
+          
+          // Sincronizar flag de habilitación desde DB (fallback)
+          if (res['habilitarBajada'] == true && !_habilitarBotonBajada) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _habilitarBotonBajada = true);
+            });
+          }
 
           return StreamBuilder<DocumentSnapshot>(
             stream: viajeId.isNotEmpty ? db.collection('viajes').doc(viajeId).snapshots() : const Stream.empty(),

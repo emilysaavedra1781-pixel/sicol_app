@@ -290,13 +290,17 @@ class _DriverHomeViewState extends State<DriverHomeView> with WidgetsBindingObse
     setState(() => _poniendoDisponible = true);
 
     try {
-      // CP05: Verificación GPS
-      final verificacion = await _locationService.verificarUbicacionParaIniciarViaje();
+      // Intentar iniciar viaje validando geocerca automáticamente (RF34, RF33)
+      var result = await _tripService.iniciarViaje(
+        conductorData: userData,
+        lat: _currentPosition?.latitude,
+        lng: _currentPosition?.longitude,
+      );
 
       if (!mounted) return;
 
-      if (!verificacion.dentroDelRango) {
-        // CP02: Advertencia por ubicación incorrecta
+      // CP02: Advertencia por ubicación incorrecta
+      if (result['success'] == false && result['error'] == 'outside-geofence') {
         final bool? forzar = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -307,38 +311,46 @@ class _DriverHomeViewState extends State<DriverHomeView> with WidgetsBindingObse
                 style: TextStyle(color: CabifyColors.textSecondary)),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCELAR', style: TextStyle(color: CabifyColors.textSecondary))),
-              if (kDebugMode)
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  style: ElevatedButton.styleFrom(backgroundColor: CabifyColors.primary, foregroundColor: Colors.white),
-                  child: const Text('INICIAR DE TODAS FORMAS'),
-                ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: CabifyColors.primary, foregroundColor: Colors.white),
+                child: const Text('INICIAR DE TODAS FORMAS'),
+              ),
             ],
           ),
         );
 
-        if (forzar != true) {
+        if (forzar == true) {
+          result = await _tripService.iniciarViaje(
+            conductorData: userData,
+            lat: _currentPosition?.latitude,
+            lng: _currentPosition?.longitude,
+            ignorarGeocerca: true,
+          );
+        } else {
           setState(() => _poniendoDisponible = false);
           return;
         }
       }
 
-      // CP01: Registro viaje activo
-      final viajeId = await _tripService.iniciarViaje(
-        conductorData: userData,
-        lat: _currentPosition?.latitude,
-        lng: _currentPosition?.longitude,
-        ruta: verificacion.dentroDelRango ? verificacion.rutaMasCercana : null,
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Viaje iniciado exitosamente'), backgroundColor: Color(0xFF10B981))
-        );
-        Navigator.push(context, MaterialPageRoute(builder: (_) => DriverTripView(
-          viajeId: viajeId,
-          conductorData: userData,
-        )));
+      if (result['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Viaje iniciado exitosamente'), backgroundColor: Color(0xFF10B981))
+          );
+          Navigator.push(context, MaterialPageRoute(builder: (_) => DriverTripView(
+            viajeId: result['viajeId'],
+            conductorData: userData,
+          )));
+        }
+      } else {
+        final error = result['error'];
+        String msg = 'No se pudo iniciar el viaje.';
+        if (error == 'active-trip-exists') msg = 'Ya tienes un viaje activo. Ciérralo primero.';
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+        }
       }
 
     } catch (e) {

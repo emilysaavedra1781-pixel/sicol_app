@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
+import '../../services/booking_service.dart';
 import '../../widgets/logout_helper.dart';
 import 'tabs/dashboard_tab.dart';
 import 'tabs/conductores_tab.dart';
@@ -22,6 +23,7 @@ class AdminHomeView extends StatefulWidget {
 
 class _AdminHomeViewState extends State<AdminHomeView> {
   final _authService = AuthService();
+  final _bookingService = BookingService();
   final _db = FirebaseFirestore.instance;
   int _tabIndex = 0;
 
@@ -81,7 +83,7 @@ class _AdminHomeViewState extends State<AdminHomeView> {
                 ),
                 VehiculosTab(db: _db),
                 UsuariosTab(db: _db, onToggle: (u, n, b) => {}),
-                ViajesTab(db: _db),
+                ViajesTab(db: _db, bookingService: _bookingService),
                 MonitoreoTab(db: _db),
                 OcupacionTab(db: _db),
                 ParaderosTab(db: _db),

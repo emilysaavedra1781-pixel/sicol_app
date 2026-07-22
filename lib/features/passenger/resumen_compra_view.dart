@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../services/booking_service.dart';
 import '../../services/deep_link_service.dart';
 import '../../app_theme.dart';
 
@@ -33,6 +34,7 @@ class ResumenCompraView extends StatefulWidget {
 
 class _ResumenCompraViewState extends State<ResumenCompraView> {
   final _db = FirebaseFirestore.instance;
+  final _bookingService = BookingService();
   bool _procesando = false;
 
   @override
@@ -180,36 +182,11 @@ class _ResumenCompraViewState extends State<ResumenCompraView> {
   Future<void> _cancelarReserva() async {
     // CP03: Liberar asientos y volver
     try {
-      final batch = _db.batch();
-      
-      // 1. Cambiar estado en el viaje
-      final vRef = _db.collection('viajes').doc(widget.viajeId);
-      final vSnap = await vRef.get();
-      final vData = vSnap.data() as Map<String, dynamic>;
-      final asientos = Map<String, dynamic>.from(vData['asientos'] ?? {});
-      
-      for (var n in widget.asientos) {
-        final key = 'asiento_$n';
-        if (asientos[key]?['estado'] == 'bloqueado') {
-          asientos[key] = {
-            'numero': n,
-            'estado': 'libre',
-            'pasajero': null,
-          };
-        }
-      }
-      batch.update(vRef, {'asientos': asientos});
-
-      // 2. Eliminar reservas bloqueadas
-      final resSnap = await _db.collection('reservas')
-          .where('reservaGroupId', isEqualTo: widget.reservaGroupId)
-          .get();
-      
-      for (var doc in resSnap.docs) {
-        batch.delete(doc.reference);
-      }
-
-      await batch.commit();
+      await _bookingService.cancelarBloqueoTemporal(
+        viajeId: widget.viajeId,
+        reservaGroupId: widget.reservaGroupId,
+        asientos: widget.asientos,
+      );
       if (mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint('Error al cancelar reserva: $e');

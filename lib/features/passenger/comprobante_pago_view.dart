@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/booking_service.dart';
+import '../../models/comprobante_model.dart';
 import '../../app_theme.dart';
 
 class ComprobantePagoView extends StatelessWidget {
   final String reservaId;
+  final _bookingService = BookingService();
 
-  const ComprobantePagoView({super.key, required this.reservaId});
+  ComprobantePagoView({super.key, required this.reservaId});
 
   @override
   Widget build(BuildContext context) {
@@ -29,18 +32,13 @@ class ComprobantePagoView extends StatelessWidget {
         ],
       ),
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('reservas').doc(reservaId).snapshots(),
+        stream: _bookingService.getReservaStream(reservaId),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           if (!snapshot.data!.exists) return const Center(child: Text('Comprobante no encontrado'));
           
           final data = snapshot.data!.data() as Map<String, dynamic>;
-          final comp = data['comprobante'] as Map<String, dynamic>?;
-          
-          final fecha = (comp?['fechaEmision'] as Timestamp?)?.toDate() ?? (data['creadoEn'] as Timestamp?)?.toDate() ?? DateTime.now();
-          final monto = (comp?['monto'] as num?)?.toDouble() ?? (data['monto'] as num?)?.toDouble() ?? 15.0;
-          final conductor = comp?['conductorNombre'] ?? 'Conductor Sicol';
-          final codigoComp = comp?['codigoComprobante'] ?? reservaId.substring(0, 8).toUpperCase();
+          final model = ComprobanteModel.fromFirestore(data, reservaId);
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -70,24 +68,24 @@ class ComprobantePagoView extends StatelessWidget {
                       const Text('PAGO EXITOSO', 
                         style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, letterSpacing: 1.5, fontSize: 12)),
                       const SizedBox(height: 8),
-                      Text('S/ ${monto.toStringAsFixed(2)}', 
+                      Text(model.montoFormateado, 
                         style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w900, color: CabifyColors.textPrimary)),
                       const Divider(height: 48),
-                      _rowInfo('Cód. Comprobante', codigoComp),
-                      _rowInfo('Fecha', '${fecha.day}/${fecha.month}/${fecha.year} ${fecha.hour.toString().padLeft(2,'0')}:${fecha.minute.toString().padLeft(2,'0')}'),
-                      _rowInfo('Viajero', comp?['viajeroNombre'] ?? data['nombreViajero'] ?? '-'),
-                      _rowInfo('Conductor', conductor),
-                      _rowInfo('Vehículo', comp?['placaVehiculo'] ?? '-'),
-                      _rowInfo('Asiento', 'Asiento ${comp?['asiento'] ?? data['numeroAsiento'] ?? '-'}'),
-                      _rowInfo('Paradero', comp?['paradero'] ?? data['paradero'] ?? '-'),
-                      _rowInfo('Código Verif.', comp?['codigoVerificacion'] ?? data['codigoVerificacion'] ?? '-'),
+                      _rowInfo('Cód. Comprobante', model.codigoComprobante),
+                      _rowInfo('Fecha', model.fechaFormateada),
+                      _rowInfo('Viajero', model.viajeroNombre),
+                      _rowInfo('Conductor', model.conductorNombre),
+                      _rowInfo('Vehículo', model.placaVehiculo),
+                      _rowInfo('Asiento', 'Asiento ${model.asiento}'),
+                      _rowInfo('Paradero', model.paradero),
+                      _rowInfo('Código Verif.', model.codigoVerificacion),
                       const Divider(height: 48),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           const Icon(Icons.security, size: 14, color: Color(0xFF6B7280)),
                           const SizedBox(width: 8),
-                          Text('ID TRANSACCIÓN: ${data['paymentId'] ?? "-"}', 
+                          Text('ID TRANSACCIÓN: ${model.paymentId ?? "-"}',
                             style: const TextStyle(fontSize: 10, color: Color(0xFF6B7280), fontFamily: 'monospace')),
                         ],
                       ),

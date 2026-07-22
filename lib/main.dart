@@ -147,7 +147,13 @@ class AuthGate extends StatelessWidget {
               );
             }
 
-            final data = firestoreSnap.data!.data() as Map<String, dynamic>;
+            final snapshotData = firestoreSnap.data?.data() as Map<String, dynamic>?;
+            if (snapshotData == null) {
+              FirebaseAuth.instance.signOut();
+              return const LoginView();
+            }
+
+            final data = snapshotData;
             final rol = data['rol'] ?? '';
             final estado = data['estado'] ?? '';
 

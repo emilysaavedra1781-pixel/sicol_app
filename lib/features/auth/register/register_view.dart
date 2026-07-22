@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../../../services/auth_service.dart';
+import '../../../services/validation_service.dart';
 import 'otp_verification_view.dart';
 import '../../../app_theme.dart';
 
@@ -372,7 +373,7 @@ class _RegisterViewState extends State<RegisterView> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(8),
                   ],
-                  validator: (v) => (v == null || v.length != 8) ? 'Ingresa 8 dígitos' : null,
+                  validator: ValidationService.validarDni,
                 ),
                 const SizedBox(height: 16),
 
@@ -388,7 +389,7 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _nombreCtrl,
                             hint: 'Ej. Juan',
                             icon: Icons.person_outline,
-                            validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                            validator: (v) => ValidationService.validarRequerido(v, 'El nombre'),
                           ),
                         ],
                       ),
@@ -404,7 +405,7 @@ class _RegisterViewState extends State<RegisterView> {
                             controller: _apellidoCtrl,
                             hint: 'Ej. Pérez',
                             icon: Icons.person_outline,
-                            validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                            validator: (v) => ValidationService.validarRequerido(v, 'El apellido'),
                           ),
                         ],
                       ),
@@ -428,7 +429,7 @@ class _RegisterViewState extends State<RegisterView> {
                     padding: EdgeInsets.only(left: 12, right: 4),
                     child: Text('+51 ', style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold)),
                   ),
-                  validator: (v) => (v == null || v.length != 9) ? '9 dígitos' : null,
+                  validator: ValidationService.validarCelular,
                 ),
                 const SizedBox(height: 16),
 
@@ -439,7 +440,7 @@ class _RegisterViewState extends State<RegisterView> {
                   hint: 'usuario@email.com',
                   icon: Icons.email_outlined,
                   keyboardType: TextInputType.emailAddress,
-                  validator: (v) => (v == null || !v.contains('@')) ? 'Email inválido' : null,
+                  validator: ValidationService.validarEmail,
                 ),
                 const SizedBox(height: 16),
 
@@ -452,7 +453,7 @@ class _RegisterViewState extends State<RegisterView> {
                       controller: _fechaCtrl,
                       hint: 'DD/MM/AAAA',
                       icon: Icons.calendar_today_outlined,
-                      validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                      validator: (v) => ValidationService.validarRequerido(v, 'La fecha'),
                     ),
                   ),
                 ),
@@ -481,14 +482,7 @@ class _RegisterViewState extends State<RegisterView> {
                     hint: 'Q12345678',
                     icon: Icons.card_membership_outlined,
                     textCapitalization: TextCapitalization.characters,
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return 'Requerido';
-                      // CP06 - Formato licencia (1 letra + 8 dígitos)
-                      if (!RegExp(r'^[A-Z]\d{8}$').hasMatch(v)) {
-                        return 'Formato inválido (Ej. Q12345678)';
-                      }
-                      return null;
-                    },
+                    validator: ValidationService.validarLicencia,
                   ),
                   const SizedBox(height: 16),
 
@@ -499,7 +493,7 @@ class _RegisterViewState extends State<RegisterView> {
                     hint: 'ABC-123',
                     icon: Icons.directions_car_outlined,
                     textCapitalization: TextCapitalization.characters,
-                    validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                    validator: (v) => ValidationService.validarRequerido(v, 'La placa'),
                   ),
                   const SizedBox(height: 16),
 
@@ -510,7 +504,7 @@ class _RegisterViewState extends State<RegisterView> {
                     hint: '4',
                     icon: Icons.event_seat_outlined,
                     keyboardType: TextInputType.number,
-                    validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                    validator: (v) => ValidationService.validarRequerido(v, 'La capacidad'),
                   ),
                   const SizedBox(height: 16),
 
@@ -526,7 +520,7 @@ class _RegisterViewState extends State<RegisterView> {
                               controller: _marcaCtrl,
                               hint: 'Toyota',
                               icon: Icons.directions_car,
-                              validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                              validator: (v) => ValidationService.validarRequerido(v, 'La marca'),
                             ),
                           ],
                         ),
@@ -542,7 +536,7 @@ class _RegisterViewState extends State<RegisterView> {
                               controller: _modeloCtrl,
                               hint: 'Corolla',
                               icon: Icons.directions_car,
-                              validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                              validator: (v) => ValidationService.validarRequerido(v, 'El modelo'),
                             ),
                           ],
                         ),
@@ -557,7 +551,7 @@ class _RegisterViewState extends State<RegisterView> {
                     controller: _colorCtrl,
                     hint: 'Blanco',
                     icon: Icons.palette_outlined,
-                    validator: (v) => (v == null || v.isEmpty) ? 'Requerido' : null,
+                    validator: (v) => ValidationService.validarRequerido(v, 'El color'),
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -573,7 +567,7 @@ class _RegisterViewState extends State<RegisterView> {
                     icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, color: const Color(0xFF6B7280), size: 20),
                     onPressed: () => setState(() => _obscurePass = !_obscurePass),
                   ),
-                  validator: (v) => (v == null || v.length < 8) ? 'Contraseña muy corta' : null,
+                  validator: ValidationService.validarPassword,
                 ),
 
                 const SizedBox(height: 40),

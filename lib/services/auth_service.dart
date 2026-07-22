@@ -1,12 +1,22 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:io';
 
 
 class AuthService {
-  final _auth = FirebaseAuth.instance;
-  final _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth;
+  final FirebaseFirestore _db;
+  final FirebaseFunctions _functions;
+
+  AuthService({
+    FirebaseAuth? auth,
+    FirebaseFirestore? db,
+    FirebaseFunctions? functions,
+  })  : _auth = auth ?? FirebaseAuth.instance,
+        _db = db ?? FirebaseFirestore.instance,
+        _functions = functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
@@ -35,47 +45,57 @@ await _auth.verifyPhoneNumber(
     );
   }
 
-  Future<UserCredential> verifyOTP({
+  Future<Map<String, dynamic>> verifyOTP({
     required String verificationId,
     required String smsCode,
   }) async {
-    final credential = PhoneAuthProvider.credential(
-      verificationId: verificationId,
-      smsCode: smsCode,
-    );
-    return await _auth.signInWithCredential(credential);
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: smsCode,
+      );
+      final userCredential = await _auth.signInWithCredential(credential);
+      return {'success': true, 'user': userCredential.user};
+    } on FirebaseAuthException catch (e) {
+      return {'success': false, 'error': _handleOtpError(e.code)};
+    } catch (e) {
+      return {'success': false, 'error': 'unknown-error'};
+    }
+  }
+
+  String _handleOtpError(String code) {
+    switch (code) {
+      case 'invalid-verification-code': return 'invalid-otp';
+      case 'session-expired': return 'expired-otp';
+      case 'network-request-failed': return 'network-error';
+      default: return code;
+    }
   }
 
   // ─── RF01/RF53: Registro ──────────────────────────────────────────────────
 
-  Future<bool> isCelularRegistered(String celular) async {
-    final query = await _db
-        .collection('usuarios')
-        .where('celular', isEqualTo: celular)
-        .limit(1)
-        .get();
-    return query.docs.isNotEmpty;
+  Future<bool> isCelularRegistered(String celular, {String? excludeUid}) async {
+    var query = _db.collection('usuarios').where('celular', isEqualTo: celular);
+    final result = await query.limit(5).get();
+    if (excludeUid == null) return result.docs.isNotEmpty;
+    return result.docs.any((doc) => doc.id != excludeUid);
   }
 
-  Future<bool> isDniRegistered(String dni) async {
-    final query = await _db
-        .collection('usuarios')
-        .where('dni', isEqualTo: dni)
-        .limit(1)
-        .get();
-    return query.docs.isNotEmpty;
+  Future<bool> isDniRegistered(String dni, {String? excludeUid}) async {
+    var query = _db.collection('usuarios').where('dni', isEqualTo: dni);
+    final result = await query.limit(5).get();
+    if (excludeUid == null) return result.docs.isNotEmpty;
+    return result.docs.any((doc) => doc.id != excludeUid);
   }
 
-  Future<bool> isPlacaRegistered(String placa) async {
-    final query = await _db
-        .collection('usuarios')
-        .where('placa', isEqualTo: placa)
-        .limit(1)
-        .get();
-    return query.docs.isNotEmpty;
+  Future<bool> isPlacaRegistered(String placa, {String? excludeUid}) async {
+    var query = _db.collection('usuarios').where('vehiculo.placa', isEqualTo: placa);
+    final result = await query.limit(5).get();
+    if (excludeUid == null) return result.docs.isNotEmpty;
+    return result.docs.any((doc) => doc.id != excludeUid);
   }
 
-  Future<void> registerPasajero({
+  Future<Map<String, dynamic>> registerPasajero({
     required String dni,
     required String nombre,
     required String apellido,
@@ -84,26 +104,45 @@ await _auth.verifyPhoneNumber(
     required String password,
     required String fechaNacimiento,
   }) async {
-    final emailAuth = '$celular@sicol.pe';
-    await _auth.createUserWithEmailAndPassword(
-      email: emailAuth,
-      password: password,
-    );
-    final uid = _auth.currentUser!.uid;
-    await _db.collection('usuarios').doc(uid).set({
-      'uid': uid,
-      'dni': dni,
-      'nombre': nombre,
-      'apellido': apellido,
-      'celular': celular,
-      'email': email,
-      'fechaNacimiento': fechaNacimiento,
-      'rol': 'pasajero',
-      'estado': 'activo',
-      'bloqueado': false,
-      'intentosFallidos': 0,
-      'creadoEn': FieldValue.serverTimestamp(),
-    });
+    try {
+      final emailAuth = '$celular@sicol.pe';
+      await _auth.createUserWithEmailAndPassword(
+        email: emailAuth,
+        password: password,
+      );
+      final uid = _auth.currentUser!.uid;
+      await _db.collection('usuarios').doc(uid).set({
+        'uid': uid,
+        'dni': dni,
+        'nombre': nombre,
+        'apellido': apellido,
+        'celular': celular,
+        'email': email,
+        'fechaNacimiento': fechaNacimiento,
+        'rol': 'pasajero',
+        'estado': 'activo',
+        'bloqueado': false,
+        'intentosFallidos': 0,
+        'creadoEn': FieldValue.serverTimestamp(),
+      });
+      return {'success': true};
+    } on FirebaseAuthException catch (e) {
+      return {'success': false, 'error': _handleAuthError(e.code)};
+    } catch (e) {
+      if (e.toString().contains('network') || e.toString().contains('connection')) {
+        return {'success': false, 'error': 'network-error'};
+      }
+      return {'success': false, 'error': 'unknown-error'};
+    }
+  }
+
+  String _handleAuthError(String code) {
+    switch (code) {
+      case 'email-already-in-use': return 'duplicate-phone';
+      case 'weak-password': return 'weak-password';
+      case 'network-request-failed': return 'network-error';
+      default: return code;
+    }
   }
   Future<String?> uploadImage(File image, String path) async {
     try {
@@ -115,7 +154,7 @@ await _auth.verifyPhoneNumber(
     }
   }
 
-  Future<void> registerConductor({
+  Future<Map<String, dynamic>> registerConductor({
     required String dni,
     required String nombre,
     required String apellido,
@@ -135,71 +174,81 @@ await _auth.verifyPhoneNumber(
     File? pdfLicencia,
     File? pdfTarjeta,
   }) async {
-    final emailAuth = '$celular@sicol.pe';
-    await _auth.createUserWithEmailAndPassword(
-      email: emailAuth,
-      password: password,
-    );
-    final uid = _auth.currentUser!.uid;
+    try {
+      final emailAuth = '$celular@sicol.pe';
+      await _auth.createUserWithEmailAndPassword(
+        email: emailAuth,
+        password: password,
+      );
+      final uid = _auth.currentUser!.uid;
 
-    String? fotoUrl;
-    if (fotoPerfil != null) {
-      fotoUrl = await uploadImage(fotoPerfil, 'usuarios/$uid/perfil.jpg');
+      String? fotoUrl;
+      if (fotoPerfil != null) {
+        fotoUrl = await uploadImage(fotoPerfil, 'usuarios/$uid/perfil.jpg');
+      }
+
+      String? fotoVehiculoUrl;
+      if (fotoVehiculo != null) {
+        fotoVehiculoUrl = await uploadImage(fotoVehiculo, 'usuarios/$uid/vehiculo.jpg');
+      }
+
+      // Subida de PDFs
+      String? dniUrl;
+      if (pdfDni != null) {
+        dniUrl = await uploadImage(pdfDni, 'documentos/conductores/$uid/dni.pdf');
+      }
+
+      String? licenciaUrl;
+      if (pdfLicencia != null) {
+        licenciaUrl = await uploadImage(pdfLicencia, 'documentos/conductores/$uid/licencia.pdf');
+      }
+
+      String? tarjetaUrl;
+      if (pdfTarjeta != null) {
+        tarjetaUrl = await uploadImage(pdfTarjeta, 'documentos/conductores/$uid/tarjeta_propiedad.pdf');
+      }
+
+      await _db.collection('usuarios').doc(uid).set({
+        'uid': uid,
+        'dni': dni,
+        'nombre': nombre,
+        'apellido': apellido,
+        'celular': celular,
+        'email': email,
+        'fotoUrl': fotoUrl,
+        'fechaNacimiento': fechaNacimiento,
+        'numeroLicencia': numeroLicencia,
+        'rol': 'conductor',
+        'estado': 'pendiente_aprobacion',
+        'codigoConductor': null,
+        'bloqueado': false,
+        'intentosFallidos': 0,
+        'creadoEn': FieldValue.serverTimestamp(),
+        'documentos': {
+          'dni': {'url': dniUrl, 'estado': 'pendiente'},
+          'licencia': {'url': licenciaUrl, 'estado': 'pendiente'},
+          'tarjeta_propiedad': {'url': tarjetaUrl, 'estado': 'pendiente'},
+        },
+        'vehiculo': {
+          'placa': placa,
+          'capacidad': capacidad,
+          'modelo': modelo,
+          'marca': marca,
+          'color': color,
+          'fotoVehiculoUrl': fotoVehiculoUrl,
+          'estado': 'pendiente',
+          'fechaRegistro': FieldValue.serverTimestamp(),
+        },
+      });
+      return {'success': true};
+    } on FirebaseAuthException catch (e) {
+      return {'success': false, 'error': _handleAuthError(e.code)};
+    } catch (e) {
+      if (e.toString().contains('network') || e.toString().contains('connection')) {
+        return {'success': false, 'error': 'network-error'};
+      }
+      return {'success': false, 'error': 'unknown-error'};
     }
-
-    String? fotoVehiculoUrl;
-    if (fotoVehiculo != null) {
-      fotoVehiculoUrl = await uploadImage(fotoVehiculo, 'usuarios/$uid/vehiculo.jpg');
-    }
-
-    // Subida de PDFs
-    String? dniUrl;
-    if (pdfDni != null) {
-      dniUrl = await uploadImage(pdfDni, 'documentos/conductores/$uid/dni.pdf');
-    }
-
-    String? licenciaUrl;
-    if (pdfLicencia != null) {
-      licenciaUrl = await uploadImage(pdfLicencia, 'documentos/conductores/$uid/licencia.pdf');
-    }
-
-    String? tarjetaUrl;
-    if (pdfTarjeta != null) {
-      tarjetaUrl = await uploadImage(pdfTarjeta, 'documentos/conductores/$uid/tarjeta_propiedad.pdf');
-    }
-
-    await _db.collection('usuarios').doc(uid).set({
-      'uid': uid,
-      'dni': dni,
-      'nombre': nombre,
-      'apellido': apellido,
-      'celular': celular,
-      'email': email,
-      'fotoUrl': fotoUrl,
-      'fechaNacimiento': fechaNacimiento,
-      'numeroLicencia': numeroLicencia,
-      'rol': 'conductor',
-      'estado': 'pendiente_aprobacion',
-      'codigoConductor': null,
-      'bloqueado': false,
-      'intentosFallidos': 0,
-      'creadoEn': FieldValue.serverTimestamp(),
-      'documentos': {
-        'dni': {'url': dniUrl, 'estado': 'pendiente'},
-        'licencia': {'url': licenciaUrl, 'estado': 'pendiente'},
-        'tarjeta_propiedad': {'url': tarjetaUrl, 'estado': 'pendiente'},
-      },
-      'vehiculo': {
-        'placa': placa,
-        'capacidad': capacidad,
-        'modelo': modelo,
-        'marca': marca,
-        'color': color,
-        'fotoVehiculoUrl': fotoVehiculoUrl,
-        'estado': 'pendiente',
-        'fechaRegistro': FieldValue.serverTimestamp(),
-      },
-    });
   }
 
   // ─── RF02/RF23: Login ─────────────────────────────────────────────────────
@@ -354,6 +403,57 @@ await _auth.verifyPhoneNumber(
 
   // ─── RF03/RF46: Recuperación contraseña ──────────────────────────────────
 
+  /// Solicita el envío de un OTP de recuperación al email asociado al DNI/celular.
+  Future<Map<String, dynamic>> solicitarOtpRecuperacion(String email) async {
+    try {
+      final result = await _functions.httpsCallable('solicitarOtpRecuperacion').call({
+        'email': email,
+      });
+      return {'success': result.data['success'] == true};
+    } on FirebaseFunctionsException catch (e) {
+      return {'success': false, 'error': e.code == 'not-found' ? 'usuario_no_encontrado' : e.message};
+    } catch (e) {
+      return {'success': false, 'error': 'network-error'};
+    }
+  }
+
+  /// Verifica el OTP de recuperación ingresado por el usuario.
+  Future<Map<String, dynamic>> verificarOtpRecuperacion(String email, String otp) async {
+    try {
+      final result = await _functions.httpsCallable('verificarOtpRecuperacion').call({
+        'email': email,
+        'otp': otp,
+      });
+      return {
+        'success': result.data['success'] == true,
+        'uid': result.data['uid'],
+      };
+    } on FirebaseFunctionsException catch (e) {
+      return {
+        'success': false, 
+        'error': e.code == 'deadline-exceeded' ? 'expired-otp' : (e.code == 'permission-denied' ? 'too-many-attempts' : 'invalid-otp')
+      };
+    } catch (e) {
+      return {'success': false, 'error': 'network-error'};
+    }
+  }
+
+  /// Cambia la contraseña usando el flujo seguro de OTP.
+  /// RF46 CP07: El backend desbloquea la cuenta automáticamente.
+  Future<Map<String, dynamic>> cambiarPasswordSeguro(String uid, String newPassword) async {
+    try {
+      final result = await _functions.httpsCallable('changePasswordSecure').call({
+        'uid': uid,
+        'newPassword': newPassword,
+      });
+      return {'success': result.data['success'] == true};
+    } on FirebaseFunctionsException catch (e) {
+      return {'success': false, 'error': e.message};
+    } catch (e) {
+      return {'success': false, 'error': 'network-error'};
+    }
+  }
+
   Future<void> desbloquearCuentaPorCelular(String celular) async {
     final query = await _db
         .collection('usuarios')
@@ -404,6 +504,22 @@ await _auth.verifyPhoneNumber(
     await _db.collection('usuarios').doc(uid).update({
       'estado': 'rechazado',
       'rechazadoEn': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// RF26 CP04, CP05: Cambia el estado manual de un conductor (Activo/Inactivo)
+  Future<void> cambiarEstadoConductor(String uid, String nuevoEstado) async {
+    await _db.collection('usuarios').doc(uid).update({
+      'estado': nuevoEstado,
+      'actualizadoEn': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// RF26 CP03: Actualiza datos genéricos del conductor
+  Future<void> actualizarDatosConductor(String uid, Map<String, dynamic> data) async {
+    await _db.collection('usuarios').doc(uid).update({
+      ...data,
+      'actualizadoEn': FieldValue.serverTimestamp(),
     });
   }
 

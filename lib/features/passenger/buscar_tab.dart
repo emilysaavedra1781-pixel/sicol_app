@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../../services/booking_service.dart';
 import 'paraderos_constants.dart';
 import 'colectivo_detalle_view.dart';
 import 'rutas_paraderos_view.dart';
@@ -15,11 +16,13 @@ class BuscarTab extends StatefulWidget {
 
 class _BuscarTabState extends State<BuscarTab> {
   final _db = FirebaseFirestore.instance;
+  final _bookingService = BookingService();
 
   String? _rutaSeleccionada;
   String? _paraderoSeleccionado;
   Position? _currentPosition;
   bool _gpsActive = false;
+  bool _loading = false;
 
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -485,28 +488,10 @@ class _BuscarTabState extends State<BuscarTab> {
 
   Future<void> _seleccionarColectivo(String viajeId, Map<String, dynamic> viaje) async {
     // CP03: Concurrencia - Verificar disponibilidad real antes de avanzar
+    setState(() => _loading = true); // Asumiendo que agregamos un flag de loading si fuera necesario, pero por ahora mantengamos la lógica original simplificada
+    
     try {
-      final vRef = _db.collection('viajes').doc(viajeId);
-      final success = await _db.runTransaction<bool>((tx) async {
-        final snap = await tx.get(vRef);
-        if (!snap.exists) return false;
-        
-        final data = snap.data() as Map<String, dynamic>;
-        final capacidad = (data['capacidad'] as num?)?.toInt() ?? 4;
-        final ocupados = (data['asientosOcupados'] as num?)?.toInt() ?? 0;
-        
-        // También considerar asientos bloqueados temporalmente
-        final asientos = data['asientos'] as Map<String, dynamic>? ?? {};
-        int bloqueados = 0;
-        asientos.forEach((k, v) {
-          if (v['estado'] == 'bloqueado') bloqueados++;
-        });
-
-        if (ocupados + bloqueados >= capacidad) {
-          return false;
-        }
-        return true;
-      });
+      final success = await _bookingService.verificarDisponibilidadViaje(viajeId);
 
       if (!mounted) return;
 
@@ -535,6 +520,8 @@ class _BuscarTabState extends State<BuscarTab> {
           SnackBar(content: Text('Error: $e'), backgroundColor: CabifyColors.error),
         );
       }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 

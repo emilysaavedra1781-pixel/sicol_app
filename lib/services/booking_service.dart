@@ -1,9 +1,19 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class BookingService {
-  final _db = FirebaseFirestore.instance;
-  final _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
+  final FirebaseFunctions _functions;
+
+  BookingService({
+    FirebaseFirestore? db,
+    FirebaseAuth? auth,
+    FirebaseFunctions? functions,
+  })  : _db = db ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance,
+        _functions = functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
   String get _uid => _auth.currentUser!.uid;
 
@@ -15,6 +25,68 @@ class BookingService {
       query = query.where('ruta', isEqualTo: ruta);
     }
     return query.snapshots();
+  }
+
+  /// Verifica si un viaje aún tiene asientos disponibles (considerando ocupados y bloqueados).
+  /// CP03: Usa una transacción para garantizar consistencia en entornos concurrentes.
+  Future<bool> verificarDisponibilidadViaje(String viajeId) async {
+    try {
+      final vRef = _db.collection('viajes').doc(viajeId);
+      return await _db.runTransaction<bool>((tx) async {
+        final snap = await tx.get(vRef);
+        if (!snap.exists) return false;
+
+        final data = snap.data() as Map<String, dynamic>;
+        final capacidad = (data['capacidad'] as num?)?.toInt() ?? 4;
+        final ocupados = (data['asientosOcupados'] as num?)?.toInt() ?? 0;
+
+        final asientos = data['asientos'] as Map<String, dynamic>? ?? {};
+        int bloqueados = 0;
+        asientos.forEach((k, v) {
+          if (v['estado'] == 'bloqueado') bloqueados++;
+        });
+
+        return (ocupados + bloqueados < capacidad);
+      });
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Llama a la Cloud Function para bloquear asientos y generar la preferencia de pago.
+  /// RF07 CP01, CP02, CP03
+  Future<Map<String, dynamic>> bloquearAsientosYCrearPreferencia({
+    required String viajeId,
+    required List<int> asientos,
+    required List<Map<String, dynamic>> viajeros,
+    required double monto,
+    required String paradero,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      final result = await _functions.httpsCallable('bloquearYCrearPreferencia').call({
+        'viajeId': viajeId,
+        'pasajeroId': user?.uid,
+        'asientos': asientos,
+        'viajeros': viajeros,
+        'monto': monto,
+        'email': user?.email,
+        'paradero': paradero,
+      });
+
+      return {
+        'success': true,
+        'initPoint': result.data['init_point'],
+        'reservaGroupId': result.data['reservaGroupId'],
+      };
+    } on FirebaseFunctionsException catch (e) {
+      return {
+        'success': false,
+        'error': e.code == 'already-exists' ? 'seats-occupied' : e.message,
+      };
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
   }
 
   // ─── RF28: Cambiar asiento ante cancelación ──────────────────────────────
@@ -186,6 +258,75 @@ class BookingService {
       if (auditData != null) updateReserva.addAll(auditData);
       
       tx.update(reservaRef, updateReserva);
+    });
+  }
+
+  Stream<DocumentSnapshot> getReservaStream(String reservaId) {
+    return _db.collection('reservas').doc(reservaId).snapshots();
+  }
+
+  /// Libera asientos que fueron bloqueados temporalmente y elimina las reservas asociadas.
+  /// RF08 CP03
+  Future<void> cancelarBloqueoTemporal({
+    required String viajeId,
+    required String reservaGroupId,
+    required List<int> asientos,
+  }) async {
+    try {
+      final batch = _db.batch();
+
+      // 1. Liberar asientos en el viaje
+      final vRef = _db.collection('viajes').doc(viajeId);
+      final vSnap = await vRef.get();
+      if (vSnap.exists) {
+        final vData = vSnap.data() as Map<String, dynamic>;
+        final asientosMapa = Map<String, dynamic>.from(vData['asientos'] ?? {});
+
+        for (var n in asientos) {
+          final key = 'asiento_$n';
+          if (asientosMapa[key]?['estado'] == 'bloqueado') {
+            asientosMapa[key] = {
+              'numero': n,
+              'estado': 'libre',
+              'pasajero': null,
+            };
+          }
+        }
+        batch.update(vRef, {'asientos': asientosMapa});
+      }
+
+      // 2. Eliminar reservas temporales
+      final resSnap = await _db.collection('reservas')
+          .where('reservaGroupId', isEqualTo: reservaGroupId)
+          .get();
+
+      for (var doc in resSnap.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Libera asientos de una reserva que ya expiró por tiempo (backend TTL).
+  /// RF08 CP04
+  Future<void> liberarAsientosExpirados(String viajeId, List<int> asientos) async {
+    final vRef = _db.collection('viajes').doc(viajeId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(vRef);
+      if (!snap.exists) return;
+      final data = snap.data()!;
+      final asientosMapa = Map<String, dynamic>.from(data['asientos'] ?? {});
+      
+      for (var n in asientos) {
+        final key = 'asiento_$n';
+        if (asientosMapa[key]?['estado'] == 'bloqueado') {
+          asientosMapa[key] = {'numero': n, 'estado': 'libre', 'pasajero': null};
+        }
+      }
+      tx.update(vRef, {'asientos': asientosMapa});
     });
   }
 }

@@ -295,6 +295,7 @@ exports.bloquearYCrearPreferencia = onCall(
 
       // 2. Crear registros de reserva temporal (CP01, CP02)
       const reservaGroupId = db.collection("reservas").doc().id;
+      const codigoEncuentro = Math.random().toString(36).substring(2, 7).toUpperCase();
 
       const promesas = viajeros.map((v, index) => {
         return db.collection("reservas").add({
@@ -307,6 +308,7 @@ exports.bloquearYCrearPreferencia = onCall(
           estado: 'bloqueada',
           monto: 15,
           reservaGroupId,
+          codigoEncuentro,
           esTitular: index === 0, // El primero del array es el titular
           creadoEn: admin.firestore.FieldValue.serverTimestamp(),
           expira_en: admin.firestore.Timestamp.fromDate(expiraEn),
@@ -425,6 +427,7 @@ exports.crearPreferenciaPago = onCall(
       const resRef = db.collection("reservas").doc();
       const expiraEn = new Date();
       expiraEn.setMinutes(expiraEn.getMinutes() + 10);
+      const codigoEncuentro = Math.random().toString(36).substring(2, 7).toUpperCase();
 
       await resRef.set({
         viajeId,
@@ -434,6 +437,8 @@ exports.crearPreferenciaPago = onCall(
         paradero,
         estado: 'bloqueada',
         monto: 15,
+        reservaGroupId: resRef.id,
+        codigoEncuentro,
         creadoEn: admin.firestore.FieldValue.serverTimestamp(),
         expira_en: admin.firestore.Timestamp.fromDate(expiraEn),
         notificado_8min: false
@@ -507,14 +512,7 @@ exports.webhookMercadoPago = onRequest({ secrets: ["MP_ACCESS_TOKEN"] }, async (
           await registrarMultiReservaExitosa(ref, paymentId);
         } else {
           const { viajeId, pasajeroId, asientoNumero, paradero, nombrePasajero } = ref;
-          const existingRes = await admin.firestore().collection("reservas")
-            .where("paymentId", "==", paymentId.toString())
-            .limit(1)
-            .get();
-
-          if (existingRes.empty) {
-            await registrarReservaExitosa(viajeId, pasajeroId, asientoNumero, paradero, nombrePasajero, paymentId);
-          }
+          await registrarReservaExitosa(viajeId, pasajeroId, asientoNumero, paradero, nombrePasajero, paymentId);
         }
       }
     } catch (e) {
@@ -535,6 +533,12 @@ async function registrarMultiReservaExitosa(ref, paymentId) {
       .get();
 
     if (resSnap.empty) return;
+
+    // Verificar si ya fue procesado (Idempotencia)
+    if (resSnap.docs.some(doc => doc.data().paymentId === paymentId.toString())) {
+      console.log(`⚠️ registrarMultiReservaExitosa: Pago ${paymentId} ya procesado.`);
+      return;
+    }
 
     await db.runTransaction(async (tx) => {
       const viajeRef = db.collection('viajes').doc(viajeId);
@@ -590,6 +594,12 @@ async function registrarMultiReservaExitosa(ref, paymentId) {
 
         // RF09 CP01: Generar Comprobante
         await generarComprobanteConReintento(resDoc, vData, paymentId);
+
+        // --- NOTIFICACIÓN AL ADMIN POR CADA ASIENTO ---
+        await notificarAdmin(
+          "Nueva reserva confirmada",
+          `Asiento ${num} reservado - Viaje ${vData.rutaLabel || 'Sin ruta'} - Pasajero ${rData.nombreViajero}`
+        );
       }
 
       tx.update(viajeRef, {
@@ -630,9 +640,25 @@ async function registrarMultiReservaExitosa(ref, paymentId) {
 async function enviarPushUsuario(uid, payload) {
   try {
     const userDoc = await admin.firestore().collection("usuarios").doc(uid).get();
-    const token = userDoc.data()?.fcmToken;
-    if (token) {
-      await admin.messaging().send({ token, ...payload });
+    const token = userDoc.exists ? userDoc.data().fcmToken : null;
+
+    // Si no está en usuarios, podría ser un admin
+    let finalToken = token;
+    if (!finalToken) {
+      const adminDoc = await admin.firestore().collection("admins").doc(uid).get();
+      finalToken = adminDoc.exists ? adminDoc.data().fcmToken : null;
+    }
+
+    if (finalToken) {
+      const priorityPayload = {
+        ...payload,
+        android: { priority: "high" },
+        apns: {
+          payload: { aps: { contentAvailable: true, sound: "default" } },
+          headers: { "apns-priority": "10" },
+        },
+      };
+      await admin.messaging().send({ token: finalToken, ...priorityPayload });
     }
   } catch (e) {
     console.error("Error enviando push a", uid, e);
@@ -650,6 +676,12 @@ async function registrarReservaExitosa(viajeId, pasajeroId, asientoNumero, parad
       .where("estado", "==", "bloqueada")
       .limit(1)
       .get();
+
+    // Verificar idempotencia: si ya tiene paymentId, salir
+    if (!resSnap.empty && resSnap.docs[0].data().paymentId === paymentId.toString()) {
+      console.log(`⚠️ registrarReservaExitosa: Pago ${paymentId} ya procesado.`);
+      return;
+    }
 
     await db.runTransaction(async (tx) => {
       const viajeRef = db.collection('viajes').doc(viajeId);
@@ -720,6 +752,12 @@ async function registrarReservaExitosa(viajeId, pasajeroId, asientoNumero, parad
           body: `${nombrePasajero} - Asiento ${asientoNumero} - Paradero ${paradero}.`
         }
       });
+
+      // --- NOTIFICACIÓN AL ADMIN POR ASIENTO ---
+      await notificarAdmin(
+        "Nueva reserva confirmada",
+        `Asiento ${asientoNumero} reservado - Viaje ${vData.rutaLabel || 'Sin ruta'} - Pasajero ${nombrePasajero}`
+      );
 
       // CP02: Notificar admin (RF48)
       await notificarAdminPagoExitoso(15, resSnap.docs[0].ref);
@@ -922,27 +960,52 @@ exports.triggerNotificarIncidencia = onDocumentCreated(
   async (event) => {
     const ahora = event.data.data();
     if (!ahora) return;
-    const { viajeId, tipo, minutosRetraso } = ahora;
-    if (!viajeId) return;
+    const { viajeId, tipo, minutosRetraso, descripcion, rolUsuario } = ahora;
+
+    // Solo notificamos incidencias creadas por conductores sobre viajes específicos
+    if (!viajeId || rolUsuario !== 'conductor') return;
+
     try {
-      if (tipo === "Desvío de ruta") {
-        await enviarPushAPasajeros(viajeId, {
-          notification: {
-            title: "Cambio en tu ruta",
-            body: "El conductor se ha desviado de la ruta original.",
-          },
-          data: { tipo: "desvio_ruta", viajeId }
-        });
+      let titulo = "⚠️ Incidencia en tu viaje";
+      let cuerpo = descripcion || "El conductor ha reportado un problema.";
+
+      // Personalización según el tipo de incidencia
+      switch (tipo) {
+        case "Retraso":
+          titulo = "⏳ Retraso en el servicio";
+          cuerpo = minutosRetraso
+            ? `Tu colectivo presenta un retraso de +${minutosRetraso} min.`
+            : "El conductor ha reportado un retraso. Por favor mantente atento.";
+          break;
+        case "Avería":
+          titulo = "🔧 Problema mecánico";
+          cuerpo = "El conductor ha reportado una avería en el vehículo.";
+          break;
+        case "Accidente":
+          titulo = "🚨 Accidente reportado";
+          cuerpo = "Se ha reportado un incidente vial. El equipo de soporte está al tanto.";
+          break;
+        case "Desvío de ruta":
+          titulo = "🔀 Cambio de ruta";
+          cuerpo = "El conductor se ha desviado de la ruta original por seguridad o tráfico.";
+          break;
+        case "Problema con pasajero":
+          titulo = "⚠️ Incidencia reportada";
+          cuerpo = "El conductor reportó un inconveniente con el pasaje.";
+          break;
       }
-      if (tipo === "Retraso" && minutosRetraso && minutosRetraso >= 5) {
-        await enviarPushAPasajeros(viajeId, {
-          notification: {
-            title: "⚠️ Retraso en llegada",
-            body: `Tu colectivo presenta un retraso. Nuevo tiempo estimado: +${minutosRetraso} min.`,
-          },
-          data: { tipo: "retraso_llegada", viajeId }
-        });
-      }
+
+      const payload = {
+        notification: { title: titulo, body: cuerpo },
+        data: { tipo: "incidencia_viaje", viajeId, tipoIncidencia: tipo }
+      };
+
+      // Notificar a Pasajeros y Administradores simultáneamente
+      await Promise.all([
+        enviarPushAPasajeros(viajeId, payload),
+        notificarAdmin(`INCIDENCIA: ${titulo}`, `Viaje: ${viajeId}\n${cuerpo}`)
+      ]);
+
     } catch (error) {
       console.error("ERROR en triggerNotificarIncidencia:", error.message);
     }
@@ -952,16 +1015,35 @@ exports.triggerNotificarIncidencia = onDocumentCreated(
 async function enviarPushAPasajeros(viajeId, payload) {
   const reservasSnap = await admin.firestore().collection("reservas")
     .where("viajeId", "==", viajeId)
-    .where("estado", "==", "confirmada")
+    .where("estado", "in", ["confirmada", "abordado"])
     .get();
   if (reservasSnap.empty) return;
+
+  const priorityPayload = {
+    ...payload,
+    android: {
+      priority: "high",
+    },
+    apns: {
+      payload: {
+        aps: {
+          contentAvailable: true,
+          sound: "default",
+        },
+      },
+      headers: {
+        "apns-priority": "10",
+      },
+    },
+  };
+
   const promesas = [];
   for (const resDoc of reservasSnap.docs) {
     const pasajeroUid = resDoc.data().pasajeroUid;
     const pasajeroDoc = await admin.firestore().collection("usuarios").doc(pasajeroUid).get();
     const fcmToken = pasajeroDoc.exists ? pasajeroDoc.data().fcmToken : null;
     if (fcmToken) {
-      promesas.push(admin.messaging().send({ token: fcmToken, ...payload }));
+      promesas.push(admin.messaging().send({ token: fcmToken, ...priorityPayload }));
     }
   }
   return Promise.all(promesas);
@@ -1212,7 +1294,21 @@ async function notificarAdmin(titulo, cuerpo) {
     },
     data: {
       tipo: "alerta_admin_general"
-    }
+    },
+    android: {
+      priority: "high",
+    },
+    apns: {
+      payload: {
+        aps: {
+          contentAvailable: true,
+          sound: "default",
+        },
+      },
+      headers: {
+        "apns-priority": "10",
+      },
+    },
   };
 
   const promesas = [];
@@ -1447,6 +1543,43 @@ exports.forzarCancelacionViajeAdmin = onCall({ region: "us-central1" }, async (r
     return { success: true, reservasAfectadas: reservasSnap.size };
   } catch (e) { throw new HttpsError("internal", e.message); }
 });
+
+exports.notificarHabilitacionBajada = onDocumentUpdated(
+  {
+    document: "reservas/{reservaId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const ahora = event.data.after.data();
+    const antes = event.data.before.data();
+
+    if (ahora.habilitarBajada === true && antes.habilitarBajada !== true) {
+      try {
+        const userDoc = await admin.firestore().collection("usuarios").doc(ahora.pasajeroUid).get();
+        const fcmToken = userDoc.exists ? userDoc.data().fcmToken : null;
+
+        if (fcmToken) {
+          const payload = {
+            notification: {
+              title: "📍 Has llegado a tu destino",
+              body: ahora.llegadaSimulada
+                ? "El sistema detectó la llegada a tu destino. Ya puedes confirmar tu bajada."
+                : "¡Estás en tu paradero final! No olvides marcar 'Ya bajé' en la app.",
+            },
+            data: {
+              tipo: "llegada_destino",
+              reservaId: event.params.reservaId,
+              llegadaSimulada: (ahora.llegadaSimulada || false).toString()
+            }
+          };
+          await admin.messaging().send({ token: fcmToken, ...payload });
+        }
+      } catch (error) {
+        console.error("ERROR en notificarHabilitacionBajada:", error.message);
+      }
+    }
+  }
+);
 
 exports.notificarDecisionVehiculo = onDocumentUpdated(
   {

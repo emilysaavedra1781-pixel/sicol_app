@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import '../../../services/booking_service.dart';
 import '../../../app_theme.dart';
 
 class ViajesTab extends StatelessWidget {
   final FirebaseFirestore db;
-  const ViajesTab({super.key, required this.db});
+  final BookingService? bookingService;
+  const ViajesTab({super.key, required this.db, this.bookingService});
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +67,7 @@ class ViajesTab extends StatelessWidget {
                               const SizedBox(height: 16),
                               const Text('PASAJEROS:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: CabifyColors.textSecondary)),
                               const SizedBox(height: 8),
-                              ..._buildPassengersList(data['asientos'] ?? {}),
+                              ..._buildPassengersList(context, id, data['asientos'] ?? {}),
                               const SizedBox(height: 24),
                               Row(
                                 children: [
@@ -279,19 +281,89 @@ class ViajesTab extends StatelessWidget {
     }
   }
 
-  List<Widget> _buildPassengersList(Map<String, dynamic> asientos) {
+  List<Widget> _buildPassengersList(BuildContext context, String viajeId, Map<String, dynamic> asientos) {
     List<Widget> list = [];
     asientos.forEach((key, val) {
       if (val['pasajero'] != null) {
+        final pasajero = val['pasajero'];
         list.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2.0),
-          child: Text('• Asiento ${val['numero']}: ${val['pasajero']['nombre']} (${val['pasajero']['paradero']})',
-            style: const TextStyle(fontSize: 12, color: CabifyColors.textPrimary)),
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text('• Asiento ${val['numero']}: ${pasajero['nombre']} (${pasajero['paradero']})',
+                  style: const TextStyle(fontSize: 12, color: CabifyColors.textPrimary)),
+              ),
+              IconButton(
+                constraints: const BoxConstraints(),
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.cancel_outlined, size: 18, color: CabifyColors.error),
+                onPressed: () => _confirmarCancelacionIndividual(context, viajeId, val['numero'], pasajero['nombre']),
+                tooltip: 'Cancelar esta reserva',
+              ),
+            ],
+          ),
         ));
       }
     });
     if (list.isEmpty) list.add(const Text('No hay pasajeros registrados', style: TextStyle(fontSize: 12, color: CabifyColors.textSecondary)));
     return list;
+  }
+
+  Future<void> _confirmarCancelacionIndividual(BuildContext context, String viajeId, int numAsiento, String nombre) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancelar Reserva'),
+        content: Text('¿Deseas cancelar la reserva del asiento $numAsiento ($nombre)?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('VOLVER')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true), 
+            style: ElevatedButton.styleFrom(backgroundColor: CabifyColors.error),
+            child: const Text('SÍ, CANCELAR'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        // Buscar la reserva activa para este asiento
+        final snap = await db.collection('reservas')
+            .where('viajeId', isEqualTo: viajeId)
+            .where('numeroAsiento', isEqualTo: numAsiento)
+            .where('estado', whereIn: ['confirmada', 'abordado'])
+            .limit(1)
+            .get();
+
+        if (snap.docs.isEmpty) {
+          throw Exception('No se encontró una reserva activa para este asiento.');
+        }
+
+        final reservaId = snap.docs.first.id;
+        final adminUid = FirebaseAuth.instance.currentUser?.uid ?? 'admin';
+
+        await bookingService?.forzarCancelacionAdmin(
+          reservaId: reservaId,
+          viajeId: viajeId,
+          numeroAsiento: numAsiento,
+          adminUid: adminUid,
+        );
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Reserva cancelada correctamente.'), backgroundColor: CabifyColors.success)
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: CabifyColors.error)
+          );
+        }
+      }
+    }
   }
 
   Widget _buildBadge(String status) {

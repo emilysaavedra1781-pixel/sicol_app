@@ -183,7 +183,9 @@ void main() {
             referencia: 'Av. La Molina cruce con Javier Prado',
             ruta: 'chosica_lima', orden: 4),
       ];
-      final service = ParaderoService();
+      // filtrar() es puro Dart — no usa Firestore, pero el constructor necesita
+      // un db para no llamar a FirebaseFirestore.instance (que requiere initializeApp)
+      final service = ParaderoService(db: FakeFirebaseFirestore());
 
       // ACT — el pasajero escribe "chosica" en el buscador
       final resultQuery = service.filtrar(paraderos, 'chosica');
@@ -215,7 +217,8 @@ void main() {
         ParaderoModel(id: '3', nombre: 'C', referencia: 'ref C',
             ruta: 'chosica_lima', orden: 3),
       ];
-      final service = ParaderoService();
+      // Igual que CP02: pasamos fake aunque filtrar() no lo use
+      final service = ParaderoService(db: FakeFirebaseFirestore());
 
       // ACT — el pasajero no ha escrito nada aún
       final result = service.filtrar(paraderos, '');

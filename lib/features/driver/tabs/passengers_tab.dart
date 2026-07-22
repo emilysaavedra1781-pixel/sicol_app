@@ -8,6 +8,7 @@ class PassengersTab extends StatelessWidget {
   final int capacidad;
   final bool enCamino;
   final void Function(Map<String, dynamic> pasajero, int numeroAsiento) onValidar;
+  final void Function(String codigoEncuentro) onValidarGrupo;
 
   const PassengersTab({
     super.key,
@@ -15,6 +16,7 @@ class PassengersTab extends StatelessWidget {
     required this.capacidad,
     required this.enCamino,
     required this.onValidar,
+    required this.onValidarGrupo,
   });
 
   @override
@@ -96,17 +98,11 @@ class PassengersTab extends StatelessWidget {
               ...grupos.entries.map((entry) {
                 final grupoDocs = entry.value;
                 final bool esGrupo = grupoDocs.length > 1;
-
-                // Ordenar dentro del grupo: titular primero
-                grupoDocs.sort((a, b) {
-                  final dataA = a.data() as Map<String, dynamic>;
-                  final dataB = b.data() as Map<String, dynamic>;
-                  final bool titularA = dataA['esTitular'] ?? false;
-                  final bool titularB = dataB['esTitular'] ?? false;
-                  if (titularA && !titularB) return -1;
-                  if (!titularA && titularB) return 1;
-                  return 0;
-                });
+                final firstData = grupoDocs.first.data() as Map<String, dynamic>;
+                final String ce = firstData['codigoEncuentro'] ?? '---';
+                
+                // Verificar si hay alguien pendiente en el grupo
+                final bool hayPendientes = grupoDocs.any((d) => (d.data() as Map)['estado'] == 'confirmada');
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,11 +111,26 @@ class PassengersTab extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12, left: 4),
                         child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Icon(Icons.group_rounded, color: CabifyColors.primary, size: 18),
-                            const SizedBox(width: 8),
-                            Text('Grupo de ${grupoDocs.length} personas', 
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: CabifyColors.primary)),
+                            Row(
+                              children: [
+                                const Icon(Icons.group_rounded, color: CabifyColors.primary, size: 18),
+                                const SizedBox(width: 8),
+                                Text('Grupo de ${grupoDocs.length} personas', 
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: CabifyColors.primary)),
+                              ],
+                            ),
+                            if (hayPendientes)
+                              TextButton.icon(
+                                onPressed: () => onValidarGrupo(ce),
+                                icon: const Icon(Icons.verified_user_rounded, size: 16),
+                                label: const Text('VALIDAR GRUPO', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                style: TextButton.styleFrom(
+                                  backgroundColor: CabifyColors.primary.withValues(alpha: 0.1),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                ),
+                              ),
                           ],
                         ),
                       ),

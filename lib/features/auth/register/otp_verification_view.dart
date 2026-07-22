@@ -152,12 +152,16 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
 
     try {
       if (code != '123456') {
-        await _authService.verifyOTP(verificationId: _verificationId, smsCode: code);
+        final result = await _authService.verifyOTP(verificationId: _verificationId, smsCode: code);
+        if (result['success'] != true) {
+          throw FirebaseAuthException(code: result['error'] ?? 'invalid-verification-code');
+        }
       }
 
+      final Map<String, dynamic> result;
       final rol = widget.userData['rol'];
       if (rol == 'conductor') {
-        await _authService.registerConductor(
+        result = await _authService.registerConductor(
           dni: widget.userData['dni'],
           nombre: widget.userData['nombre'],
           apellido: widget.userData['apellido'],
@@ -178,7 +182,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
           pdfTarjeta: widget.userData['pdfTarjeta'],
         );
       } else {
-        await _authService.registerPasajero(
+        result = await _authService.registerPasajero(
           dni: widget.userData['dni'],
           nombre: widget.userData['nombre'],
           apellido: widget.userData['apellido'],
@@ -189,18 +193,36 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
         );
       }
 
-      if (mounted) {
-        final rol = widget.userData['rol'];
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(rol == 'conductor' 
-              ? 'Tu registro fue exitoso y está pendiente de aprobación.' 
-              : 'Cuenta creada con éxito. Ya puedes iniciar sesión.'),
-            backgroundColor: CabifyColors.success,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-        Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const AuthGate()), (route) => false);
+      if (result['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(rol == 'conductor' 
+                ? 'Tu registro fue exitoso y está pendiente de aprobación.' 
+                : 'Cuenta creada con éxito. Ya puedes iniciar sesión.'),
+              backgroundColor: CabifyColors.success,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const AuthGate()), (route) => false);
+        }
+      } else {
+        // Manejo del error retornado por el servicio
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            final error = result['error'];
+            if (error == 'duplicate-phone') {
+              _errorMessage = 'Este número de celular ya está registrado.';
+            } else if (error == 'network-error') {
+              _errorMessage = 'No se pudo conectar. Verifica tu conexión e inténtalo de nuevo.';
+            } else if (error == 'weak-password') {
+              _errorMessage = 'La contraseña es demasiado débil.';
+            } else {
+              _errorMessage = 'Error al crear la cuenta: $error';
+            }
+          });
+        }
       }
     } catch (e) {
       if (!mounted) return;
